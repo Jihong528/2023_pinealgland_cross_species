@@ -1,0 +1,149 @@
+﻿ZebrafishGenename,RatGenename,MonkeyGenename,Group,Class,ClassFullName
+opn3,Opn3,OPN3,Phototransduction,Opsin,Opsin
+opn4b,None,None,Phototransduction,Opsin,Opsin
+opn4xa,None,None,Phototransduction,Opsin,Opsin
+opn4b,Opn4,OPN4,Phototransduction,Opsin,Opsin
+opn4.1,None,None,Phototransduction,Opsin,Opsin
+opn4a,None,None,Phototransduction,Opsin,Opsin
+opn5,Opn5,None,Phototransduction,Opsin,Opsin
+opn6a,None,None,Phototransduction,Opsin,Opsin
+opn6b,None,None,Phototransduction,Opsin,Opsin
+opn7a,None,None,Phototransduction,Opsin,Opsin
+opn7b,None,None,Phototransduction,Opsin,Opsin
+opn7c,None,None,Phototransduction,Opsin,Opsin
+opn7d,None,None,Phototransduction,Opsin,Opsin
+opn8a,None,None,Phototransduction,Opsin,Opsin
+opn8b,None,None,Phototransduction,Opsin,Opsin
+opn8c,None,None,Phototransduction,Opsin,Opsin
+opn9,None,None,Phototransduction,Opsin,Opsin
+opn1sw1,Opn1sw,OPN1SW,Phototransduction,Opsin,Opsin
+opn1sw2,None,None,Phototransduction,Opsin,Opsin
+opn1mw1,Opn1mw,OPN1MW,Phototransduction,Opsin,Opsin
+opn1mw2,None,None,Phototransduction,Opsin,Opsin
+opn1mw3,None,None,Phototransduction,Opsin,Opsin
+opn1mw4,None,None,Phototransduction,Opsin,Opsin
+opn1lw1,None,None,Phototransduction,Opsin,Opsin
+opn1lw2,None,None,Phototransduction,Opsin,Opsin
+rhol,None,None,Phototransduction,Opsin,Opsin
+rho,Rho,RHO,Phototransduction,Opsin,Opsin
+exorh,Rho,RHO,Phototransduction,Opsin,Opsin
+rgrb,None,None,Phototransduction,Opsin,Opsin
+rgra,None,None,Phototransduction,Opsin,Opsin
+rrh,Rrh,RRH,Phototransduction,Opsin,Opsin
+pdca,Pdc,PDC,Phototransduction,Phosducin,Phosducin
+pdcb,Pdc,PDC,Phototransduction,Phosducin,Phosducin
+pdcl,Pdcl,PDCL,Phototransduction,Phosducin,Phosducin
+gnat1,Gnat1,GNAT1,Phototransduction,Transducin,Transducins alpha subnit
+gnat2,Gnat2,GNAT2,Phototransduction,Transducin,Transducins alpha subnit
+gnb1a,Gnb1,GNB1,Phototransduction,Transducin,Transducins beta subnit
+gnb1b,Gnb1,GNB1,Phototransduction,Transducin,Transducins beta subnit
+gnb3a,Gnb3,GNB3,Phototransduction,Transducin,Transducins beta subnit
+gnb3b,Gnb3,GNB3,Phototransduction,Transducin,Transducins beta subnit
+gngt1,Gngt1,GNGT1,Phototransduction,Transducin,Transducins gamma subnit
+gngt2a,Gngt2,GNGT2,Phototransduction,Transducin,Transducins gamma subnit
+gngt2b,Gngt2,GNGT2,Phototransduction,Transducin,Transducins gamma subnit
+rgs9a,Rgs9,RGS9,Phototransduction,GTPA,GTPase accelerator
+rgs9b,Rgs9,RGS9,Phototransduction,GTPA,GTPase accelerator
+rgs16,Rgs16,RGS16,Phototransduction,GTPA,GTPase accelerator
+rgs9bp,Rgs9bp,RGS9BP,Phototransduction,GTPA,GTPase accelerator
+pde6a,Pde6a,PDE6A,Phototransduction,PDE6,Phosphodiesterases
+pde6b,Pde6b,PDE6B,Phototransduction,PDE6,Phosphodiesterases
+pde6c,Pde6c,PDE6C,Phototransduction,PDE6,Phosphodiesterases
+pde6d,Pde6d,PDE6D,Phototransduction,PDE6,Phosphodiesterases
+pde6h,Pde6h,PDE6H,Phototransduction,PDE6,Phosphodiesterases
+pde6ha,Pde6h,PDE6H,Phototransduction,PDE6,Phosphodiesterases
+pde6hb,Pde6h,PDE6H,Phototransduction,PDE6,Phosphodiesterases
+pde6ga,Pde6g,PDE6G,Phototransduction,PDE6,Phosphodiesterases
+pde6gb,Pde6g,PDE6G,Phototransduction,PDE6,Phosphodiesterases
+guca1a,Guca1a,GUCA1A,Phototransduction,GCAP,Guanylyl cyclase-activating proteins
+guca1b,Guca1b,GUCA1B,Phototransduction,GCAP,Guanylyl cyclase-activating proteins
+guca1c,None,None,Phototransduction,GCAP,Guanylyl cyclase-activating proteins
+guca1d,None,None,Phototransduction,GCAP,Guanylyl cyclase-activating proteins
+guca1e,None,None,Phototransduction,GCAP,Guanylyl cyclase-activating proteins
+guca1e.2,None,None,Phototransduction,GCAP,Guanylyl cyclase-activating proteins
+guca1g,None,None,Phototransduction,GCAP,Guanylyl cyclase-activating proteins
+cnga1a,Cnga1,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cnga1b,Cnga1,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cnga2a,Cnga2,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cnga2b,Cnga2,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cnga3a,Cnga3,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cnga3b,Cnga3,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cnga4,Cnga4,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cngb1a,Cngb1,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cngb1b,Cngb1,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cngb3.1,Cngb3,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+cngb3.2,Cngb3,None,Phototransduction,CNG,Cyclic nucleotide-gated ion channels
+gucy2e,Gucy2e,GUCY2E,Phototransduction,GC,Guanylyl cyclases
+gucy2f,Gucy2f,GUCY2F,Phototransduction,GC,Guanylyl cyclases
+gucy2d,Gucy2d,GUCY2D,Phototransduction,GC,Guanylyl cyclases
+gc2,None,None,Phototransduction,GC,Guanylyl cyclases
+slc24a1,Slc24a1,SLC24A1,Phototransduction,NCKX,"Na+/ Ca2+, K+ exchanger"
+slc24a2,Slc24a2,SLC24A2,Phototransduction,NCKX,"Na+/ Ca2+, K+ exchanger"
+slc24a4a,None,None,Phototransduction,NCKX,"Na+/ Ca2+, K+ exchanger"
+slc24a4b,None,None,Phototransduction,NCKX,"Na+/ Ca2+, K+ exchanger"
+saga,Sag,SAG,Phototransduction,ARR,Arrestins (ARR)
+sagb,Sag,SAG,Phototransduction,ARR,Arrestins (ARR)
+arr3a,Arr3,ARR3,Phototransduction,ARR,Arrestins (ARR)
+arr3b,Arr3,ARR3,Phototransduction,ARR,Arrestins (ARR)
+arrb1,Arrb1,ARRB1,Phototransduction,ARR,Arrestins (ARR)
+arrb2a,Arrrb2,ARRB2,Phototransduction,ARR,Arrestins (ARR)
+arrb2b,Arrrb2,ARRB2,Phototransduction,ARR,Arrestins (ARR)
+rcvrna,Rcvrn,RCVRN,Phototransduction,RCVRN,Recoverin (RCVRN)
+rcvrnb,Rcvrn,RCVRN,Phototransduction,RCVRN,Recoverin (RCVRN)
+rcvrn2,Rcvrn,RCVRN,Phototransduction,RCVRN,Recoverin (RCVRN)
+rcvrn3,Rcvrn,RCVRN,Phototransduction,RCVRN,Recoverin (RCVRN)
+cacna1fb,Cacna1f,CACNA1F,Phototransduction,CA,Ca+
+cacna1fa,Cacna1f,CACNA1F,Phototransduction,CA,Ca+
+cdhr1a,Cdhr1,CDHR1,Phototransduction,CA,Ca+
+calm2a,Calm2,CALM2,Phototransduction,CA,Ca+
+calm2b,Calm2,CALM2,Phototransduction,CA,Ca+
+calm3a,Calm2,CALM2,Phototransduction,CA,Ca+
+calm3b,Calm3,CALM3,Phototransduction,CA,Ca+
+grk1a,Grk1,GRK1,Phototransduction,GRK,GRK
+grk1b,Grk1,GRK1,Phototransduction,GRK,GRK
+grk7a,Grk7,GRK7,Phototransduction,GRK,GRK
+grk7b,Grk7,GRK7,Phototransduction,GRK,GRK
+tph1a,Tph1,TPH1,MelatoninSynthesis,MelatoninSynthesis,MelatoninSynthesis
+tph1b,Tph1,TPH1,MelatoninSynthesis,MelatoninSynthesis,MelatoninSynthesis
+tph2,Tph2,TPH2,MelatoninSynthesis,MelatoninSynthesis,MelatoninSynthesis
+ddc,Ddc,DDC,MelatoninSynthesis,MelatoninSynthesis,MelatoninSynthesis
+aanat1,Aanat,AANAT,MelatoninSynthesis,MelatoninSynthesis,MelatoninSynthesis
+aanat2,Aanat,AANAT,MelatoninSynthesis,MelatoninSynthesis,MelatoninSynthesis
+asmt,Asmt,ASMT,MelatoninSynthesis,MelatoninSynthesis,MelatoninSynthesis
+arntl1a,Arntl,ARNTL,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+arntl1b,Arntl,ARNTL,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+arntl2,Arntl2,ARNTL2,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+clocka,Clock,CLOCK,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+clockb,Clock,CLOCK,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+cry1aa,Cry1,CRY1,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+cry1bb,Cry1,CRY1,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+cry2,Cry2,CRY2,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+per1a,Per1,PER1,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+per1b,Per1,PER1,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+per2,Per2,PER2,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+per3,Per3,PER3,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+roraa,Rora,RORA,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+rorab,Rora,RORA,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+rorb,Rorb,RORB,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+timeless,Timeless,TIMELESS,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+csnk1db,Csnk1d,CSNK1D,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+csnk1da,Csnk1d,CSNK1D,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+csnk1e,Csnk1e,CSNK1E,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+dbpb,Dbp,DBP,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+dbpa,Dbp,DBP,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+fbxl3l,Fbxl3,FBXL3,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+fbxl3a,Fbxl3,FBXL3,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+fbxl3b,Fbxl3,FBXL3,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+kpnb1,Kpnb1,KPNB1,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+nr1d1,Nr1d1,NR1D1,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+nr1d2a,Nr1d2,NR1D2,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+nr1d2b,Nr1d2,NR1D2,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+tefa,Tef,TEF,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+tefb,Tef,TEF,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+crebbpa,Crebbp,CREBBP,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+crebbpb,Crebbp,CREBBP,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+ciarta,Ciart,CIART,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+csnk1a1,Csnk1a1,CSNK1A1,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+bhlhe41,Bhlhe41,BHLHE41,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+kdm5a,Kdm5a,KDM5A,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation
+npas2,Npas2,NPAS2,CircadianRhythmnRegulation,CircadianRhythmnRegulation,CircadianRhythmnRegulation

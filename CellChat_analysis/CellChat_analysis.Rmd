@@ -1,0 +1,170 @@
+---
+title: "Cellchat_analysis"
+author: "Jihong Zheng"
+date: "2023-07-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# 20230717 CellChat Analysis 仅仅关注感光细胞以及胶质细胞 microglia 
+## Zebrafish
+
+### combine cone/rod as pinealocytes, rpe-like, muller like-glia 
+```{r generate seurat object}
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis")
+
+library(Seurat)
+
+seurat_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+table(seurat_rds$celltype_assign)
+seurat_rds <- subset(seurat_rds, celltype_assign %in% c("Cone-like photoreceptors", "Rod-like photoreceptors",
+																												"Retinal pigment epithelium-like", "Muller glia-like"))
+seurat_rds$celltype_assign <- gsub("Cone-like photoreceptors|Rod-like photoreceptors", "Photoreceptors", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Retinal pigment epithelium-like", "RPE-like", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Muller glia-like", "Muller like-glia", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- factor(as.character(seurat_rds$celltype_assign),
+																		 levels = c("Photoreceptors", "RPE-like", "Muller like-glia"))
+seurat_rds@active.ident <- seurat_rds$celltype_assign
+saveRDS(seurat_rds, "zebrafish_cellchat_seurat_rds_combine_selected.rds")
+
+```
+
+```{bash Zebrafish Cellchat}
+source activate r403
+cd /home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/zebrafish/
+output="/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/zebrafish"
+seuratobject="/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/zebrafish_cellchat_seurat_rds_combine_selected.rds"
+lrdbobject="/home/zhengjh/scripts/cellchat/cellchatdb/original_zebrafish_cellchatdb.rds"
+nohup Rscript /home/zhengjh/scripts/cellchat/run_single_cellchat.r --output $output --seurat_object $seuratobject --lrdb_path $lrdbobject --filelabel "zebrafish_combine_selected" --thresh_p 0.2 >zebrafish_cellchat_log.txt 2>&1 &
+
+```
+
+## Rat
+
+### combine two pinealocytes into one pinealocytes, astrocyte
+```{r generate seurat object}
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/")
+
+library(Seurat)
+seurat_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+table(seurat_rds$celltype_assign)
+seurat_rds <- subset(seurat_rds, celltype_assign %in% c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+seurat_rds$celltype_assign <- gsub("α-pinealocyte|β-pinealocyte", "Pinealocyte", seurat_rds$celltype_assign)
+table(seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- factor(as.character(seurat_rds$celltype_assign),
+																		 levels = c("Pinealocyte", "Astrocyte"))
+seurat_rds@active.ident <- seurat_rds$celltype_assign
+saveRDS(seurat_rds, "rat_cellchat_seurat_rds_combine_selected.rds")
+
+```
+
+```{bash Rat Cellchat}
+source activate r403
+cd /home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/rat
+output="/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/rat"
+seuratobject="/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/rat_cellchat_seurat_rds_combine_selected.rds"
+lrdbobject="/home/zhengjh/scripts/cellchat/cellchatdb/original_mouse_cellchatdb.rds"
+nohup Rscript /home/zhengjh/scripts/cellchat/run_single_cellchat.r --output $output --seurat_object $seuratobject --lrdb_path $lrdbobject --filelabel "rat_combine_selected" --thresh_p 0.05 >rat_cellchat_log.txt 2>&1 &
+
+```
+
+
+## Monkey
+### pinealocyte and astrocyte
+```{r generate seurat object}
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/")
+
+library(Seurat)
+seurat_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+table(seurat_rds$celltype_assign)
+
+seurat_rds <- subset(seurat_rds, celltype_assign %in% c("Pinealocyte", "Astrocyte"))
+table(seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- factor(as.character(seurat_rds$celltype_assign),
+																		 levels = c("Pinealocyte", "Astrocyte"))
+seurat_rds@active.ident <- seurat_rds$celltype_assign
+saveRDS(seurat_rds, "monkey_cellchat_seurat_rds_combine_selected.rds")
+
+
+```
+
+```{bash Monkey Cellchat}
+source activate r403
+cd /home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/monkey
+output="/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/monkey"
+seuratobject="/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/monkey_cellchat_seurat_rds_combine_selected.rds"
+lrdbobject="/home/zhengjh/scripts/cellchat/cellchatdb/original_human_cellchatdb.rds"
+
+nohup Rscript /home/zhengjh/scripts/cellchat/run_single_cellchat.r --output $output --seurat_object $seuratobject --lrdb_path $lrdbobject --filelabel "monkey_combine_selected" --thresh_p 0.05 > monkey_cellchat_log.txt 2>&1 &
+
+```
+
+
+## 20230717 ligand-receptors pairs
+```{r ligand-receptor pairs}
+
+##### zebrafish
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230717_CellchatAnalysis/")
+
+library(CellChat)
+library(ggplot2)                  
+library(patchwork)
+library(igraph)
+z_cellchat <- readRDS("zebrafish/cellchatzebrafish_combine_selected_.rds")
+levels(z_cellchat@idents)
+r_cellchat <- readRDS("rat/cellchatrat_combine_selected_.rds")
+levels(r_cellchat@idents)
+m_cellchat <- readRDS("monkey/cellchatmonkey_combine_selected_.rds")
+levels(m_cellchat@idents)
+
+p_z <- netVisual_bubble(z_cellchat, sources.use = 2:3, targets.use = 1, remove.isolate = T, thresh = 0.01)
+p_z_2 <- netVisual_bubble(z_cellchat, sources.use = 1, targets.use = 2:3, remove.isolate = T, thresh = 0.01)
+p_z$data <- rbind(p_z$data, p_z_2$data)
+
+p_r <- netVisual_bubble(r_cellchat, sources.use = 2, targets.use = 1, remove.isolate = T, thresh = 0.01)
+p_r_2 <- netVisual_bubble(r_cellchat, sources.use = 1, targets.use = 2, remove.isolate = T, thresh = 0.01)
+p_r$data <- rbind(p_r$data, p_r_2$data)
+
+p_m <- netVisual_bubble(m_cellchat, sources.use = 2, targets.use = 1, remove.isolate = T, thresh = 0.01)
+p_m_2 <- netVisual_bubble(m_cellchat, sources.use = 1, targets.use = 2, remove.isolate = T, thresh = 0.01)
+p_m$data <- rbind(p_m$data, p_m_2$data)
+
+
+p_z_chord <- netVisual_chord_gene(z_cellchat, sources.use = 1:3, targets.use = 1:3,
+																	lab.cex = 0.5,legend.pos.y = 30, 
+																	color.use = c("#80B1D3",  "#89B00F", "#FB8072"))
+p_r_chord <- netVisual_chord_gene(r_cellchat, sources.use = 1:2, targets.use = 1:2,
+																	lab.cex = 0.5,legend.pos.y = 30, 
+																	color.use = c("#80B1D3",   "#FB8072"))
+p_m_chord <- netVisual_chord_gene(m_cellchat, sources.use = 1:2, targets.use = 1:2,
+																	lab.cex = 0.5,legend.pos.y = 30, 
+																	color.use = c("#80B1D3",   "#FB8072"))
+
+#mycolors <- c("#80B1D3",  "#89B00F", "#FB8072") # Create a custom color vector
+pdf("20230717_three_species_netVisual_netVisual_chord_gene_0.05.pdf", 10, 10)
+p_z_chord
+p_r_chord
+p_m_chord
+dev.off()
+
+# 可以将推断的结果提取出来
+z_df.net <- subsetCommunication(z_cellchat,sources.use = 1:3, targets.use = 1:3)
+r_df.net <- subsetCommunication(r_cellchat,sources.use = 1:3, targets.use = 1:3)
+m_df.net <- subsetCommunication(m_cellchat,sources.use = 1:3, targets.use = 1:3)
+
+df.net <- list(z_df.net = z_df.net, r_df.net = r_df.net, m_df.net = m_df.net)
+
+write.xlsx(df.net, "20230717_df.net.xlsx")
+
+pdf("20230717_three_species_netVisual_bubble_pinealocytes_astrocyte.pdf", 20, 10)
+p_z + p_r + p_m
+dev.off()
+
+```

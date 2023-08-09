@@ -1,0 +1,680 @@
+---
+title: "GPCR_analysis"
+author: "Jihong Zheng"
+date: "2023-03-19"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## construct GPCR list table
+```{r construct GPCR list table}
+rm(list = ls())
+library(reshape)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/")
+gpcr_list <- read.xlsx("MouseHumanRatGPCRs.xlsx", sheet = 1)
+zebrafish_gpcr <- read.xlsx("MouseHumanRatGPCRs.xlsx", sheet = 2)
+
+colnames(zebrafish_gpcr) <- c("Gene.Symbol.(Human)", "Gene.Symbol.(Zebrafish)")
+gpcr_table <-  full_join(gpcr_list, zebrafish_gpcr)
+gpcr_table[is.na(gpcr_table)] <- "Absent"
+write.xlsx(gpcr_table, "20221222_Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table.xlsx", colNames = T, rowNames = T)
+
+gpcr_list <- melt(gpcr_table, id.vars = c("Name", "Family", "Class", "Subclass"))
+colnames(gpcr_list) <- c("Description", "Family", "Class", "Subclass", "group", "genename" )
+gpcr_list <- subset(gpcr_list, !(gpcr_list$genename %in% "Absent"))
+saveRDS(gpcr_list, "20221222_Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table.rds")
+```
+
+## GPCR Pipeline Analysis
+### GeneratePseudocellSeuratObject
+
+```{bash GeneratePseudocellSeuratObject }
+zebrafish_data_path="/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds"
+rat_data_path="/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds"
+monkey_data_path="/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds"
+outputpath="/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat"
+cd ${outputpath}
+echo ${zebrafish_data_path}
+
+
+echo "zebrafish_data_path="/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds"
+rat_data_path="/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds"
+monkey_data_path="/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds"
+outputpath="/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/"
+source activate r403
+/home/zhengjh/scripts/seurat/pipeline/GeneratePseudocellSeuratObject.R -o ${outputpath} --seuratobjectpath ${zebrafish_data_path} --prefix "20221224_zebrafish" 
+/home/zhengjh/scripts/seurat/pipeline/GeneratePseudocellSeuratObject.R -o ${outputpath} --seuratobjectpath ${rat_data_path} --prefix "20221224_rat"
+/home/zhengjh/scripts/seurat/pipeline/GeneratePseudocellSeuratObject.R -o ${outputpath} --seuratobjectpath ${monkey_data_path} --prefix "20221224_monkey"
+" > runPseudoCellSeurat.sh 
+
+nohup sh runPseudoCellSeurat.sh 2>&1 >output.txt &
+
+### rat night data
+outputpath="/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat"
+rat_night_data_path="/home/zhengjh/projects/PinealGland/snakemake/data/rat_night_pineal_select_celtype.rds"
+cd ${outputpath}
+echo ${rat_night_data_path}
+/home/zhengjh/scripts/seurat/generate_pseudo_object.r -o ${outputpath} --seurat_object_path ${rat_night_data_path} --filelabel "20230701_rat_night"
+
+```
+
+```{r GPCR pipeline Analysis}
+
+rm(list = ls())
+source("/home/zhengjh/scripts/GPCRpipelineFunction.R")
+library(ggplotify)
+### 1. read data 
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/")
+gpcr_list <- readRDS("20221222_Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table.rds")
+
+speciesname <- c("zebrafish", "rat", "monkey")
+singledata_path <- list( zebrafish = "/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+pseudodata_path <- list( zebrafish = "/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat/20221224_zebrafish.PseudoCell.seurat.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat/20221224_rat.PseudoCell.seurat.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat/20221224_monkey.PseudoCell.seurat.rds")
+
+gpcrindex_name <- list(zebrafish = "Gene.Symbol.(Zebrafish)",
+											 rat = "Gene.Symbol.(Rat)",
+											 monkey = "Gene.Symbol(Crab-eating.monkey)")
+
+celltype_info <- list( zebrafish =  c("Rod-like photoreceptors", "Cone-like photoreceptors",
+																			"Retinal pigment epithelium-like","Muller glia-like" , 
+																			"Microglia", "Neuron", "VLMCs", "Endothelial"),
+											 rat =  c("α-pinealocyte", "β-pinealocyte",  "Astrocyte", "Microglia",  "VLMCs", "Endothelial"),
+											 monkey =  c("Pinealocyte", "Astrocyte", "Microglia", "Cycling cell", "Neuron", 
+											 						"Oligodendrocyte1", "Oligodendrocyte2", "VLMCs"))
+
+col_info <- list(zebrafish = c("#80B1D3", "#FDB462", "#76C4C4", "#FB8072", "#BEBADA", "#FCCDE5", "#8DD3C7", "#FFED6F"),
+								 rat = c("#FDB462", "#80B1D3",  "#FB8072","#BEBADA",  "#8DD3C7", "#FFED6F"),
+								 monkey = c("#80B1D3", "#FB8072", "#BEBADA", "#B3DE69", "#FCCDE5", "#FFED6F", "#FDB462", "#8DD3C7"))
+
+res_gpcr_marker <- list()
+
+for (i in speciesname){
+	print(i)
+	
+	### 1。read in data
+	seurat_rds <- readRDS(singledata_path[[i]])
+	seurat_rds <- ScaleData(seurat_rds, features = rownames(seurat_rds))
+	print(table(seurat_rds@active.ident))
+  DefaultAssay(seurat_rds) <- "RNA"
+  
+	pseducell <- readRDS(pseudodata_path[[i]])
+	pseducell <- ScaleData(pseducell, features = rownames(seurat_rds))
+	print(table(pseducell@active.ident))
+	DefaultAssay(pseducell) <- "RNA"
+
+	gpcr_list_species <- gpcr_list[gpcr_list$group == gpcrindex_name[[i]], ]
+	intersect_genename <- intersect(gpcr_list_species$genename, rownames(seurat_rds))
+	gpcr_list_species <- gpcr_list_species[gpcr_list_species$genename %in% intersect_genename, ]		
+	gpcr_list_species <- gpcr_list_species[!duplicated(gpcr_list_species$genename), ]	
+
+
+	### 2. narrow down gpcr list
+	gpcr_markers <- IdentifyCellTypeTopGPCR(seurat_rds = seurat_rds, gpcr_list = gpcr_list_species,
+																				min_pct_cutoff = 0.1, logfc_threshold = 0.1)
+	gpcr_markers <- arrange(gpcr_markers, cluster, Family)
+  res_gpcr_marker[[i]] <- gpcr_markers
+	### 3. use real data to generate heatmap
+	heatmap_input <- GenerateTopGPCRScaleData(seurat_rds, gpcr_markers, celltype_info[[i]], col_info[[i]])
+ 
+	p_realcell <- pheatmap::pheatmap(heatmap_input$plot_data, #fontsize_row=3,
+									 color=colorRampPalette(c("navy", "white", "firebrick3"))(50),
+									 breaks=seq(-1, 1, length.out = 50),
+									 treeheight_row=10, treeheight_col=2,border_color='grey',
+									 cluster_cols = F,cluster_rows = F,fontsize_row = 18,
+									 annotation_col = heatmap_input$annotation_col,
+									 annotation_row = heatmap_input$annotation_row,
+									 annotation_colors = heatmap_input$ann_colors,
+									 show_colnames = F, scale='none',
+									 border=TRUE,
+									 clustering_method = "complete",
+									 main = paste(i, "singlecell", sep = "_"))
+
+	### 4. use pseudocell to generate heatmap
+
+	heatmap_input <- GenerateTopGPCRScaleData(pseducell, gpcr_markers, celltype_info[[i]], col_info[[i]])
+	p_pse <- pheatmap::pheatmap(heatmap_input$plot_data, #fontsize_row=3,
+									 color=colorRampPalette(c("navy", "white", "firebrick3"))(50),
+									 breaks=seq(-1, 1, length.out = 50),
+									 treeheight_row=10, treeheight_col=2,border_color='grey',
+									 cluster_cols = F,cluster_rows = F,fontsize_row = 18,
+									 annotation_col = heatmap_input$annotation_col,
+									 annotation_row = heatmap_input$annotation_row,
+									 annotation_colors = heatmap_input$ann_colors,
+									 show_colnames = F,scale='none',
+									 border=TRUE,
+									 clustering_method = "complete",
+									 main = paste(i, "pseudocellsize_10", sep = "_"))
+plots <- plot_grid(as.grob(p_realcell), as.grob(p_pse), ncol = 2)
+ggsave(filename = paste("20221227", i, "select_celltype_specific_gpcr_col_span_abs_1.pdf", sep = "_"), plot = plots, width = 40, height = 20)
+}
+
+write.xlsx(res_gpcr_marker, "20221227_pinealgland_res_gpcr_marker.xlsx", colNames = T, rowNames = T)
+
+
+######## GPCR score 
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis")
+
+library(GSVA)
+library(Nebulosa)
+library(Seurat)
+speciesname <- c("zebrafish", "rat", "monkey")
+singledata_path <- list( zebrafish = "/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+
+for(i in 1:3){
+
+  selected_gpcr <- read.xlsx("20221227_pinealgland_res_gpcr_marker.xlsx", sheet = i)
+  seurat_rds <- readRDS(singledata_path[[i]])
+  GS <- list(selected_gpcr = unique(selected_gpcr$gene))
+  exp_count <- as.matrix(seurat_rds@assays$RNA@data)
+  score <- GSVA::gsva(exp_count, gset.idx.list = GS,
+                    method = 'ssgsea',parallel.sz = 4, ssgsea.norm = T)
+  seurat_rds@meta.data[["gpcr_score"]] <- as.vector(score[1, ])
+  saveRDS(seurat_rds, paste0(speciesname[i], "gpcr.rds"))
+}
+
+
+
+#### 
+rm(list = ls())
+library(Seurat)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis")
+zebrafish <- readRDS("zebrafishgpcr.rds")
+rat <- readRDS("ratgpcr.rds")
+monkey <- readRDS("monkeygpcr.rds")
+
+p1 <- plot_density(zebrafish, "gpcr_score", reduction = "tsne")
+p2 <- plot_density(rat, "gpcr_score", reduction = "tsne")
+p3 <- plot_density(monkey, "gpcr_score", reduction = "tsne")
+
+zebrafish$gpcr_score_density <- p1$data$feature
+rat$gpcr_score_density <- p2$data$feature
+monkey$gpcr_score_density <- p3$data$feature
+
+library(viridis)
+
+p_zebrafish <- FeaturePlot(zebrafish, features = "gpcr_score_density", reduction = "tsne", cols = viridis(10), label = T)
+p_rat <- FeaturePlot(rat, features = "gpcr_score_density", cols = viridis(10), reduction = "tsne", label = T)
+p_monkey <- FeaturePlot(monkey, features = "gpcr_score_density", cols = viridis(10), reduction = "tsne",
+												label = T, min.cutoff = 0, max.cutoff = 0.001) 
+
+library(cowplot)
+plots <-  plot_grid(p_zebrafish, p_rat, p_monkey, ncol = 3)
+ggsave("20230105_pineal_gland_gpcr_score.pdf", plot = plots, width = 24, height = 8)
+
+
+```
+
+## 20230226 organize GPCR Figure  
+```{r 20230226 organize GPCR Figure }
+rm(list = ls())
+source("/home/zhengjh/scripts/GPCRpipelineFunction.R")
+
+### 1. check the GPCR list
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/")
+gpcr_list <- readRDS("20221222_Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table.rds")
+
+speciesname <- c("zebrafish", "rat", "monkey")
+singledata_path <- list( zebrafish = "/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+
+speciesname <- c("zebrafish", "rat", "monkey")
+singledata_path <- list( zebrafish = "/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+pseudodata_path <- list( zebrafish = "/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat/20221224_zebrafish.PseudoCell.seurat.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat/20221224_rat.PseudoCell.seurat.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat/20221224_monkey.PseudoCell.seurat.rds")
+
+gpcrindex_name <- list(zebrafish = "Gene.Symbol.(Zebrafish)",
+											 rat = "Gene.Symbol.(Rat)",
+											 monkey = "Gene.Symbol(Crab-eating.monkey)")
+
+celltype_info <- list( zebrafish =  c("Rod-like photoreceptors", "Cone-like photoreceptors",
+																			"Retinal pigment epithelium-like","Muller glia-like" , 
+																			"Microglia", "Neuron", "VLMCs", "Endothelial"),
+											 rat =  c("α-pinealocyte", "β-pinealocyte",  "Astrocyte", "Microglia",  "VLMCs", "Endothelial"),
+											 monkey =  c("Pinealocyte", "Astrocyte", "Microglia", "Cycling cell", "Neuron", 
+											 						"Oligodendrocyte1", "Oligodendrocyte2", "VLMCs"))
+
+col_info <- list(zebrafish = c("#80B1D3", "#FDB462", "#76C4C4", "#FB8072", "#BEBADA", "#FCCDE5", "#8DD3C7", "#FFED6F"),
+								 rat = c("#FDB462", "#80B1D3",  "#FB8072","#BEBADA",  "#8DD3C7", "#FFED6F"),
+								 monkey = c("#80B1D3", "#FB8072", "#BEBADA", "#B3DE69", "#FCCDE5", "#FFED6F", "#FDB462", "#8DD3C7"))
+
+num <- list()
+gpcrnames <- list()
+
+for (i in speciesname){
+	print(i)
+	
+	### 1。read in data
+	seurat_rds <- readRDS(singledata_path[[i]])
+	#seurat_rds <- ScaleData(seurat_rds, features = rownames(seurat_rds))
+	#print(table(seurat_rds@active.ident))
+  DefaultAssay(seurat_rds) <- "RNA"
+ 
+	gpcr_list_species <- gpcr_list[gpcr_list$group == gpcrindex_name[[i]], ]
+	intersect_genename <- intersect(gpcr_list_species$genename, rownames(seurat_rds))
+	print(length(intersect_genename))
+  
+	gpcr_list_species <- gpcr_list_species[gpcr_list_species$genename %in% intersect_genename, ]		
+	gpcr_list_species <- gpcr_list_species[!duplicated(gpcr_list_species$genename), ]	
+  
+	gpcrnames[[i]] <- gpcr_list_species
+	
+  num[[i]] <- as.data.frame(table(gpcr_list_species$Family, gpcr_list_species$Class))
+  colnames(num[[i]]) <- c("Family", "Subclass", "Num")
+  index <- num[[i]]$Num!=0
+  num[[i]] <- num[[i]][index, ]
+}	
+
+write.xlsx(num, "20230226_GPCRnumber_count.xlsx", colNames = T, rowNames = T)
+write.xlsx(gpcrnames, "20230226_gpcrnames.xlsx", colNames = T, rowNames = T)
+
+
+### 看下三个物种gpcr的交集
+gpcr_list <- list()
+for (i in getSheetNames("20230226_gpcrnames.xlsx")){
+	gpcr_list[[i]] <- read.xlsx("20230226_gpcrnames.xlsx", sheet = i)$ratname
+	gpcr_list[[i]] <- unique(gpcr_list[[i]])
+}
+
+
+library(RColorBrewer)
+p = venn.diagram(
+  x = gpcr_list,
+  category.names = names(gpcr_list),
+  # filename = 'venn.png',
+  filename = NULL,
+  output=TRUE,
+  fill = brewer.pal(3, "Set2"),
+  col = brewer.pal(3, "Set2"),
+  fontface = "bold",
+  cat.col = brewer.pal(3, "Set2"),
+  cat.fontface = "bold"
+)
+pdf("20230227_GPCR_Venn_combine.pdf")
+grid.draw(p)
+dev.off()
+
+### 获取交集基因列表
+library(VennDiagram)
+inter <- get.venn.partitions(gpcr_list)
+for (j in 1:nrow(inter)) inter[j,'values'] <- paste(inter[[j,'..values..']], collapse = ', ')
+write.xlsx(inter, "20230227_GPCR_Venn_combine_intersect_analysis.xlsx",  colNames = T, rowNames = T)
+
+
+#### 上述交集基因的功能富集图
+plot_data <- read.xlsx("20230227_DetechedGPCR_metascape_result.xlsx", sheet = 3)
+plot_data_used <- data.frame(pathway = plot_data$Description, logp=plot_data$minus_LogP)
+p1 <- ggbarplot(plot_data_used, x = "pathway", y = "logp", fill = "logp", palette = "Blues")
+p1 <- p1 + scale_color_gradient2(low = "#F7B06B", mid = "#F4902C", high = "#993404")
+p1 <- p1 + coord_flip()
+p1 <- p1 + scale_color_gradient2(low = "#F7B06B", mid = "#F4902C", high = "#993404")
+
+nbreaks = 20
+minimum <- floor(min(plot_data_used$logp)/nbreaks)*nbreaks
+maximum <- ceiling(max(plot_data_used$logp)/nbreaks)*nbreaks
+
+th <- theme(#axis.text.y = element_blank(), 
+            axis.ticks.y = element_blank(),
+            axis.title.y = element_blank(),
+            panel.background = element_rect(fill = 'white'), 
+            panel.border = element_rect(color = 'black', fill = NA),
+            panel.grid.major.y = element_blank(),
+            panel.grid.minor.y = element_blank(),
+            panel.grid.major.x = element_line(colour = "grey80", linetype = "dashed"),
+            panel.grid.minor.x = element_blank())
+
+pdf("20230227_DetectedGPCR_metscape_replot_heatmap.pdf", width = 10, height = 6)
+ggplot(plot_data_used, aes(x = reorder(pathway, logp), y = logp)) +
+  geom_bar(aes(fill = logp), stat = "identity") + 
+  labs(y = '-log10(P value)', fill = '') +
+  coord_flip() +  
+  th + 
+  scale_y_continuous(limits = c(0, maximum), breaks = seq(0, maximum, nbreaks)) +
+  scale_fill_gradient2(low = '#F7B06B', high = '#993404', mid = '#F4902C',
+                       limits = c(0, maximum), breaks = seq(0, maximum, nbreaks)) #修改图例名字以及图中颜色
+
+dev.off()
+
+#### 看下celltypetopgpcr交集情况
+
+gpcr_list <- list()
+for (i in getSheetNames("20221227_pinealgland_res_gpcr_marker.xlsx")){
+	gpcr_list[[i]] <- read.xlsx("20221227_pinealgland_res_gpcr_marker.xlsx", sheet = i)$ratname
+	gpcr_list[[i]] <- unique(gpcr_list[[i]])
+}
+
+
+library(RColorBrewer)
+p = venn.diagram(
+  x = gpcr_list,
+  category.names = names(gpcr_list),
+  # filename = 'venn.png',
+  filename = NULL,
+  output=TRUE,
+  fill = brewer.pal(3, "Set2"),
+  col = brewer.pal(3, "Set2"),
+  fontface = "bold",
+  cat.col = brewer.pal(3, "Set2"),
+  cat.fontface = "bold"
+)
+pdf("20230227_GPCR_Venn_celltypetopgpcr.pdf")
+grid.draw(p)
+dev.off()
+
+### 获取交集基因列表
+library(VennDiagram)
+inter <- get.venn.partitions(gpcr_list)
+for (j in 1:nrow(inter)) inter[j,'values'] <- paste(inter[[j,'..values..']], collapse = ', ')
+write.xlsx(inter, "20230227_GPCR_Venn_celltypetopgpcr_intersect_analysis.xlsx",  colNames = T, rowNames = T)
+
+
+### 看下GPCR基因分布
+plot_data <- read.xlsx("20230226_GPCRnumber_count_for_heatmap.xlsx")
+p1 <- ggbarplot(plot_data, x = "Colnames_used", y = "Num", fill = "Species")
+p1 <- p1 + theme(axis.text.x = element_text(angle=90))
+p1 <- p1 + ylim(0, 150)
+
+ggsave(filename = "20230226_pinealgland_GPCR_count.pdf", plot = p1, width = 8, height = 6)
+
+```
+
+## retina GPCR analysis
+```{r retina GPCRs}
+rm(list = ls())
+
+### 1. check the GPCR list
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230323_figure4_gpcr")
+gpcr_list <- readRDS("/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds")
+
+speciesname <- c("zebrafish", "rat", "monkey")
+singledata_path <- list(zebrafish = "/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_retina.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/snakemake/data/rat_retina.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/snakemake/data/monkey_retina.rds")
+
+pseudodata_path <- list(zebrafish = "/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_retina.PseudoCell.seurat.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/snakemake/data/rat_retina.PseudoCell.seurat.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/snakemake/data/monkey_retina.PseudoCell.seurat.rds")
+
+gpcrindex_name <- list(zebrafish = "Gene.Symbol.(Zebrafish)",
+											 rat = "Gene.Symbol.(Rat)",
+											 monkey = "Gene.Symbol(Crab-eating.monkey)")
+
+celltype_info <- list(zebrafish =  c("Rod-like photoreceptors", "Cone-like photoreceptors",
+																			"Retinal pigment epithelium-like","Muller glia-like" , 
+																			"Microglia", "Neuron", "VLMCs", "Endothelial"),
+											rat =  c("α-pinealocyte", "β-pinealocyte",  "Astrocyte", "Microglia",  "VLMCs", "Endothelial"),
+											monkey =  c("Pinealocyte", "Astrocyte", "Microglia", "Cycling cell", "Neuron", 
+											 						"Oligodendrocyte1", "Oligodendrocyte2", "VLMCs"))
+
+col_info <- list(zebrafish = c("#80B1D3", "#FDB462", "#76C4C4", "#FB8072", "#BEBADA", "#FCCDE5", "#8DD3C7", "#FFED6F"),
+								 rat = c("#FDB462", "#80B1D3",  "#FB8072","#BEBADA",  "#8DD3C7", "#FFED6F"),
+								 monkey = c("#80B1D3", "#FB8072", "#BEBADA", "#B3DE69", "#FCCDE5", "#FFED6F", "#FDB462", "#8DD3C7"))
+
+num <- list()
+gpcrnames <- list()
+
+
+for (i in speciesname){
+	print(i)
+	
+	### 1。read in data
+	seurat_rds <- readRDS(singledata_path[[i]])
+	#seurat_rds <- ScaleData(seurat_rds, features = rownames(seurat_rds))
+	#print(table(seurat_rds@active.ident))
+  DefaultAssay(seurat_rds) <- "RNA"
+ 
+	gpcr_list_species <- gpcr_list[gpcr_list$group == gpcrindex_name[[i]], ]
+	intersect_genename <- intersect(gpcr_list_species$genename, rownames(seurat_rds))
+	print(length(intersect_genename))
+  
+	gpcr_list_species <- gpcr_list_species[gpcr_list_species$genename %in% intersect_genename, ]		
+	gpcr_list_species <- gpcr_list_species[!duplicated(gpcr_list_species$genename), ]	
+  
+	gpcrnames[[i]] <- gpcr_list_species
+	
+  num[[i]] <- as.data.frame(table(gpcr_list_species$Family, gpcr_list_species$Class))
+  colnames(num[[i]]) <- c("Family", "Subclass", "Num")
+  index <- num[[i]]$Num!=0
+  num[[i]] <- num[[i]][index, ]
+}	
+
+write.xlsx(num, "20230323_retina_GPCRnumber_count.xlsx", colNames = T, rowNames = T)
+write.xlsx(gpcrnames, "20230323_retina_gpcrnames.xlsx", colNames = T, rowNames = T)
+
+
+### 看下三个物种gpcr的交集
+gpcr_list <- list()
+for (i in getSheetNames("20230323_pineal_retina_gpcrnames.xlsx")){
+	gpcr_list[[i]] <- read.xlsx("20230323_pineal_retina_gpcrnames.xlsx", sheet = i)$ratname
+	gpcr_list[[i]] <- unique(na.omit(gpcr_list[[i]]))
+}
+
+pdf("20230323_pineal_retina_GPCR_upsetR.pdf", width = 12, height = 8)
+upset(fromList(gpcr_list),  order.by = "freq", nsets = length(gpcr_list))
+dev.off()
+
+library(RColorBrewer)
+p = venn.diagram(
+  x = gpcr_list,
+  category.names = names(gpcr_list),
+  # filename = 'venn.png',
+  filename = NULL,
+  output=TRUE,
+  fill = brewer.pal(6, "Set2"),
+  col = brewer.pal(6, "Set2"),
+  fontface = "bold",
+  cat.col = brewer.pal(6, "Set2"),
+  cat.fontface = "bold"
+)
+pdf("20230323_retina_GPCR_Venn_combine.pdf")
+grid.draw(p)
+dev.off()
+
+### 获取交集基因列表
+library(VennDiagram)
+inter <- get.venn.partitions(gpcr_list)
+for (j in 1:nrow(inter)) inter[j,'values'] <- paste(inter[[j,'..values..']], collapse = ', ')
+write.xlsx(inter, "20230323_pineal_retina_GPCR_Venn_combine_intersect_analysis.xlsx",  colNames = T, rowNames = T)
+
+
+#### cell type GPCR
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230323_figure4_gpcr")
+
+GenerateTopGPCRScaleData <- function(seurat_object, gpcr_markers){
+	
+	#p1 <- DoHeatmap(seurat_object, features = gpcr_markers$gene)
+	#gene_order <- rev(levels(p1$data$Feature))
+	
+	unique_gpcr_markers <- dplyr::select(gpcr_markers, c("gene", "Family"))
+	unique_gpcr_markers <- unique_gpcr_markers[!duplicated(unique_gpcr_markers$gene), ]
+	#unique_gpcr_markers <- unique_gpcr_markers[gene_order, ]
+	
+	## gcpr scale data
+	gpcr_data <- as.matrix(seurat_object@assays$RNA@scale.data[unique_gpcr_markers$gene, ])
+	
+  ## annotation_col information
+	cat("Generate the annotation_col used in heatmap and sort the cellnames based on celltype_level\n")
+	celltype_levels <- levels(seurat_object@active.ident)
+	annotation_col = data.frame( celltype = seurat_object@active.ident)
+	rownames(annotation_col) <- colnames(seurat_object)
+	annotation_col <- dplyr::arrange(annotation_col, celltype)
+	
+	cat("Reorder gpcr_data based on annotation_col", "\n")
+	gpcr_data <- gpcr_data[, rownames(annotation_col)]
+	
+	cat("Check the colnames of gpcr_data is the same as rownames of annotation_col:", "\n")
+	print(all.equal(colnames(gpcr_data), rownames(annotation_col)))
+	
+	## annotation_row information
+	cat("Generate the annotation_row used in heatmap", "\n")
+	annotation_row = data.frame(gpcr_family = unique_gpcr_markers$Family)
+	rownames(annotation_row) <- unique_gpcr_markers$gene
+	cat("Check the rownames of gpcr_data is the same as rownames of annotation_row:",  "\n")
+	print(all.equal(rownames(gpcr_data), rownames(annotation_row)))
+	
+	### anno colors information
+	cat("Generate the ann_colors used in heatmap", "\n")
+	getPalette <- colorRampPalette(RColorBrewer::brewer.pal(10, "Paired"))
+	colorCount <- length(celltype_levels)
+	col_celltype <- getPalette(colorCount)
+	names(col_celltype) <- celltype_levels
+	
+	getPalette <- colorRampPalette(RColorBrewer::brewer.pal(8, "Accent"))
+	colorCount<- length(sort(unique(unique_gpcr_markers$Family)))
+	col_gpcr_family<- getPalette(colorCount)
+	names(col_gpcr_family) <- sort(unique(unique_gpcr_markers$Family))
+	# Set3; Set2; Set1; Pastel2; Pastel1; Paired; Dark2; Accent
+	
+	ann_colors = list(celltype = col_celltype, gpcr_family = col_gpcr_family)
+	
+	heatmap_input <- list(plot_data = gpcr_data, annotation_col = annotation_col, 
+												annotation_row = annotation_row, ann_colors = ann_colors)
+	
+}
+
+
+path <- "/home/zhengjh/projects/PinealGland/snakemake/data/"
+
+seurat_path <- list(zebrafish = paste0(path, "zebrafish_retina.PseudoCell.seurat.rds"),
+										rat = paste0(path, "rat_retina.PseudoCell.seurat.rds"),
+										monkey = paste0(path, "monkey_retina.PseudoCell.seurat.rds"))
+
+markers_files <- list(zebrafish = "/home/zhengjh/projects/PinealGland/analysis_downstream/zebrafish_retina/CellGPCR/celltype_gpcr_markers_.csv",
+											rat = "/home/zhengjh/projects/PinealGland/analysis_downstream/rat_retina/CellGPCR/celltype_gpcr_markers_.csv",
+											monkey = "/home/zhengjh/projects/PinealGland/analysis_downstream/monkey_retina/CellGPCR/celltype_gpcr_markers_.csv")
+
+cellselected <- list(zebrafish =  c("Cone", "Rod", "RPE", "Muller glia", "AC", "BC", "HC", "RGC", "Astrocyte"),
+										 rat = c("Cone", "Rod", "Muller glia", "AC", "BC", "AC/HC",  "Microglia", "Endothelial", "Pericyte"),
+										 monkey = c("Cone", "Rod", "Muller glia", "AC", "BC", "HC", "RGC", "Microglia"))
+
+cellselected_gpcr <- list(zebrafish =  c("Cone", "Rod", "RPE", "Muller glia", "AC", "BC", "HC", "RGC", "Astrocyte"),
+										 rat = c("Cone", "Rod", "Muller glia", "AC", "BC", "AC/HC",  "Microglia", "Endothelial", "Pericyte"),
+										 monkey = c("Cone", "Rod", "Muller glia", "AC", "BC", "HC", "RGC", "Microglia"))
+
+col_info <- list(zebrafish = c( "#00BA38", "#00C19F", "#00B9E3", "#619CFF", "#F8766D", "#93AA00", "#D39200", "#DB72FB", "#FF61C3"),
+								 rat = c("#00BA38", "#00C19F", "#619CFF", "#F8766D", "#93AA00", "#D39200", "#00B9E3", "#DB72FB", "#FF61C3"),
+								 monkey = c("#00BA38", "#00C19F", "#619CFF", "#F8766D", "#93AA00", "#D39200",  "#DB72FB", "#00B9E3" ))
+gpcr_list <- readRDS("/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds")
+speciesname <- c("zebrafish", "rat", "monkey")
+gpcr_table <- list()
+plot_list <- list()
+for (i in 1:3){
+	temp <- read.csv(markers_files[[i]], row.names = 1)
+	temp <- as.data.frame(temp)
+	index <- temp$cluster %in%  cellselected_gpcr[[i]]
+	gpcr_markers <- temp[index, ]
+	gpcr_markers$cluster <- factor(as.character(gpcr_markers$cluster), levels = cellselected_gpcr[[i]])
+	gpcr_markers <- arrange(gpcr_markers, cluster)
+	gpcr_table[[i]] <- gpcr_markers
+	seurat_rds <- readRDS(seurat_path[[i]])
+	seurat_rds <- subset(seurat_rds, idents = cellselected[[i]])
+	seurat_rds <- ScaleData(seurat_rds, features = rownames(seurat_rds))
+	levels(seurat_rds) <- cellselected[[i]]
+	heatmap_input <- GenerateTopGPCRScaleData(seurat_rds, gpcr_markers, cellselected[[i]], col_info[[i]])
+	p_pse <- pheatmap::pheatmap(heatmap_input$plot_data, #fontsize_row=3,
+									 color=colorRampPalette(c("navy", "white", "firebrick3"))(50),
+									 breaks=seq(-1, 1, length.out = 50),
+									 treeheight_row=10, treeheight_col=2,border_color='grey',
+									 cluster_cols = F,cluster_rows = F,fontsize_row = 18,
+									 annotation_col = heatmap_input$annotation_col,
+									 annotation_row = heatmap_input$annotation_row,
+									 annotation_colors = heatmap_input$ann_colors,
+									 show_colnames = F,scale='none',
+									 border=TRUE,
+									 clustering_method = "complete",
+									 main = paste(i, "pseudocellsize_10", sep = "_"), legend = F)
+  p_pse <- as.grob(p_pse)
+  plot_list[[i]] <- p_pse
+}
+
+names(gpcr_table) <- speciesname
+names(plot_list) <- speciesname
+
+write.xlsx(gpcr_table, "20230324_retina_gpcrs.xlsx", colNames = T, rowNames = T)
+plots <- plot_grid(plotlist = plot_list, ncol = 3, rel_widths = c(1.9, 1.5, 1.5))
+ggsave(filename = "20230324_retina_GPCR_heatmap_allcells.pdf", plot = plots, width = 24, height = 20)
+
+#### cone, rod, RPE and muller glia
+cellselected <- list(zebrafish =  c("Cone", "Rod", "RPE", "Muller glia"),
+										 rat = c("Cone", "Rod", "Muller glia"),
+										 monkey = c("Cone", "Rod", "Muller glia"))
+
+cellselected_gpcr <- list(zebrafish =  c("Cone", "Rod", "RPE", "Muller glia"),
+										 rat = c("Cone", "Rod", "Muller glia"),
+										 monkey = c("Cone", "Rod", "Muller glia"))
+
+col_info <- list(zebrafish = c( "#00BA38", "#00C19F", "#00B9E3","#619CFF"),
+								 rat = c("#00BA38", "#00C19F", "#619CFF"),
+								 monkey = c("#00BA38", "#00C19F", "#619CFF"))
+gpcr_list <- readRDS("/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds")
+speciesname <- c("zebrafish", "rat", "monkey")
+gpcr_table <- list()
+plot_list <- list()
+for (i in 1:3){
+	temp <- read.csv(markers_files[[i]], row.names = 1)
+	temp <- as.data.frame(temp)
+	index <- temp$cluster %in%  cellselected_gpcr[[i]]
+	gpcr_markers <- temp[index, ]
+	gpcr_markers$cluster <- factor(as.character(gpcr_markers$cluster), levels = cellselected_gpcr[[i]])
+	gpcr_markers <- arrange(gpcr_markers, cluster)
+	gpcr_table[[i]] <- gpcr_markers
+	seurat_rds <- readRDS(seurat_path[[i]])
+	seurat_rds <- subset(seurat_rds, idents = cellselected[[i]])
+	seurat_rds <- ScaleData(seurat_rds, features = rownames(seurat_rds))
+	levels(seurat_rds) <- cellselected[[i]]
+	heatmap_input <- GenerateTopGPCRScaleData(seurat_rds, gpcr_markers, cellselected[[i]], col_info[[i]])
+	p_pse <- pheatmap::pheatmap(heatmap_input$plot_data, #fontsize_row=3,
+									 color=colorRampPalette(c("navy", "white", "firebrick3"))(50),
+									 breaks=seq(-1, 1, length.out = 50),
+									 treeheight_row=10, treeheight_col=2,border_color='grey',
+									 cluster_cols = F,cluster_rows = F,fontsize_row = 18,
+									 annotation_col = heatmap_input$annotation_col,
+									 annotation_row = heatmap_input$annotation_row,
+									 annotation_colors = heatmap_input$ann_colors,
+									 show_colnames = F,scale='none',
+									 border=TRUE,
+									 clustering_method = "complete",
+									 main = paste(i, "pseudocellsize_10", sep = "_"), legend = F)
+  p_pse <- as.grob(p_pse)
+  plot_list[[i]] <- p_pse
+}
+
+names(gpcr_table) <- speciesname
+names(plot_list) <- speciesname
+write.xlsx(gpcr_table, "20230324_retina_gpcrs_cone_rod_rpe_muller.xlsx", colNames = T, rowNames = T)
+plots <- plot_grid(plotlist = plot_list, ncol = 3, rel_widths = c(1.5, 1.5, 1.5))
+ggsave(filename = "20230324_retina_GPCR_heatmap_cone_rod_rpe_muller.pdf", plot = plots, width = 24, height = 10)
+
+
+
+##### 看下MTNR1B 一级 MTNR1A表达
+
+path <- "/home/zhengjh/projects/PinealGland/snakemake/data/"
+seurat_path <- list(zebrafish_pineal = paste0(path, "zebrafish_pineal.rds"),
+										rat_pineal = paste0(path, "rat_pineal.rds"),
+										monkey_pineal = paste0(path, "monkey_pineal.rds"),
+										zebrafish_retina = paste0(path, "zebrafish_retina.rds"),
+										rat_retina = paste0(path, "rat_retina.rds"),
+										monkey_retina = paste0(path, "monkey_retina.rds"))
+
+features_plot <- list(zebrafish_pineal = c("mtnr1c", "mtnr1aa", "mtnr1al", "mtnr1ab"))
+
+```

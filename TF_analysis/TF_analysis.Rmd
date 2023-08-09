@@ -1,0 +1,297 @@
+---
+title: "TF_analysis"
+author: "Jihong Zheng"
+date: "2023-08-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{sh pineal gland}
+####### 1. zebrafish pineal #####
+## step1 para
+source activate r403
+output="/home/zhengjh/projects/PinealGland/analysis_downstream/zebrafish_pineal"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_pineal_selected_celltype.rds"
+filelabel="zebrafish_pineal"
+mt_rb_pattern="^mt-|^rpl|^rps"
+## step 2 para
+tf_path=/home/zhengjh/projects/PinealGland/data/TFdatabase/Danio_rerio_TF.txt
+orgdb_name="org.Dr.eg.db"
+
+## step 3 para
+pseudodata_path="/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_pineal_pseudo_selected_celltype.rds"
+gpcr_list_path="/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds"
+org_name="Gene.Symbol.(Zebrafish)"
+lrdb_path="/home/zhengjh/scripts/cellchat/cellchatdb/rm_duplicate_Secreted_Signaling_lr_zebrafish_cellchatdb.rds"
+cd $output
+## step1: cluster plots+marker dot plot + cell percentage
+generate_clusterplots.r -o $output --seurat_object_path $seurat_object_path --filelabel $filelabel --mt_rb_pattern $mt_rb_pattern
+
+## step2: cell type specific TF
+calculate_TFSS.r -o $output --seurat_object_path $seurat_object_path --tf_path  $tf_path --filelabel $filelabel --orgdb_name $orgdb_name
+## step3: cell specific GPCR
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path
+
+## final_use 还是--min_pct 0.1 --logfc_threshold 0.25
+filelabel="zebrafish_pineal_gpcr_pct_0.1_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.1 --logfc_threshold 0.25
+
+filelabel="zebrafish_pineal_gpcr_pct_0.25_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.25 --logfc_threshold 0.25
+
+# nohup sh zebrafish_pineal_downstream.sh >z_pineal.log 2>&1 &
+####### 2. rat day pineal #####
+## step1 para
+source activate r403
+output="/home/zhengjh/projects/PinealGland/analysis_downstream/rat_pineal"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/rat_pineal_select_celtype.rds"
+filelabel="rat_pineal"
+mt_rb_pattern="^Mt-|^Rpl|^Rps"
+## step 2 para
+tf_path=/home/zhengjh/projects/PinealGland/data/TFdatabase/Rattus_norvegicus_TF.txt
+orgdb_name="org.Rn.eg.db"
+
+## step 3 para
+pseudodata_path="/home/zhengjh/projects/PinealGland/snakemake/data/rat_pineal_pseuso_select_celltype.rds"
+gpcr_list_path="/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds"
+org_name="Gene.Symbol.(Rat)"
+lrdb_path="/home/zhengjh/scripts/cellchat/cellchatdb/rm_duplicate_Secreted_Signaling_lr_rat_cellchatdb.rds"
+cd $output
+## step1: cluster plots+marker dot plot + cell percentage
+generate_clusterplots.r -o $output --seurat_object_path $seurat_object_path --filelabel $filelabel --mt_rb_pattern $mt_rb_pattern
+
+## step2: cell type specific TF
+calculate_TFSS.r -o $output --seurat_object_path $seurat_object_path --tf_path  $tf_path --filelabel $filelabel --orgdb_name $orgdb_name
+## step3: cell specific GPCR
+
+## final_use 还是--min_pct 0.1 --logfc_threshold 0.25
+filelabel="rat_pineal_gpcr_pct_0.1_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.1 --logfc_threshold 0.25
+
+## final_use 还是--min_pct 0.1 --logfc_threshold 0.25
+filelabel="rat_pineal_gpcr_pct_0.25_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.25 --logfc_threshold 0.25
+
+
+######## 3. 20230701 补充 rat night pineal ######
+source activate r403
+## step 1 para
+output="/home/zhengjh/projects/PinealGland/analysis_downstream/rat_night_pineal"
+seurat_object_path="/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_night_rat_scRNAseq_logtransform_harmony_seurat.rds"
+#seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/rat_night_pineal_select_celtype.rds"
+filelabel="rat_night_pineal_allcells"
+mt_rb_pattern="^Mt-|^Rpl|^Rps"
+## step 2 para
+tf_path=/home/zhengjh/projects/PinealGland/data/TFdatabase/Rattus_norvegicus_TF.txt
+orgdb_name="org.Rn.eg.db"
+
+## step 3 para
+pseudodata_path="/home/zhengjh/projects/PinealGland/snakemake/data/rat_night.PseudoCell.seurat.rds"
+gpcr_list_path="/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds"
+org_name="Gene.Symbol.(Rat)"
+lrdb_path="/home/zhengjh/scripts/cellchat/cellchatdb/rm_duplicate_Secreted_Signaling_lr_rat_cellchatdb.rds"
+cd $output
+
+## step1: cluster plots+marker dot plot + cell percentage
+generate_clusterplots.r -o $output --seurat_object_path $seurat_object_path --filelabel $filelabel --mt_rb_pattern $mt_rb_pattern
+
+## step2: cell type specific TF
+calculate_TFSS.r -o $output --seurat_object_path $seurat_object_path --tf_path  $tf_path --filelabel $filelabel --orgdb_name $orgdb_name
+
+## step3: cell specific GPCR
+## final_use 还是--min_pct 0.1 --logfc_threshold 0.25
+filelabel="rat_night_pineal_gpcr_pct_0.1_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.1 --logfc_threshold 0.25
+
+filelabel="rat_night_pineal_gpcr_pct_0.25_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.25 --logfc_threshold 0.25
+
+####### 4. monkey pineal #####
+## step1 para
+source activate r403
+output="/home/zhengjh/projects/PinealGland/analysis_downstream/monkey_pineal"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/monkey_pineal_selected_celltype.rds"
+filelabel="monkey_pineal"
+mt_rb_pattern="^MT-|^RPL|^RPS"
+## step 2 para
+tf_path="/home/zhengjh/projects/PinealGland/data/TFdatabase/Macaca_fascicularis_TF.txt"
+orgdb_name="org.Mmu.eg.db"
+
+## step 3 para
+pseudodata_path="/home/zhengjh/projects/PinealGland/snakemake/data/monkey_pineal_pseudo_selected_celltype.rds"
+gpcr_list_path="/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds"
+org_name="Gene.Symbol(Crab-eating.monkey)"
+lrdb_path="/home/zhengjh/scripts/cellchat/cellchatdb/rm_duplicate_Secreted_Signaling_lr_monkey_cellchatdb.rds"
+cd $output
+## step1: cluster plots+marker dot plot + cell percentage
+generate_clusterplots.r -o $output --seurat_object_path $seurat_object_path --filelabel $filelabel --mt_rb_pattern $mt_rb_pattern
+
+## step2: cell type specific TF
+calculate_TFSS.r -o $output --seurat_object_path $seurat_object_path --tf_path  $tf_path --filelabel $filelabel --orgdb_name $orgdb_name
+## step3: cell specific GPCR
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path
+# nohup sh monkey_pineal_downstream.sh >m_pineal.org 2>&1 &
+
+## final_use 还是--min_pct 0.1 --logfc_threshold 0.25
+filelabel="monkey_pineal_gpcr_pct_0.1_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.1 --logfc_threshold 0.25
+
+filelabel="monkey_pineal_gpcr_pct_0.25_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.25 --logfc_threshold 0.25
+
+```
+
+```{sh retina}
+
+# a. cluster plots+marker dot plot + cell percentage
+# b. cell type similarity with other cells
+# c. cell type specific TF
+# d. cell-cell interaction
+# e. cell specific GPCR
+
+##### 1. zebrafish ######
+## step0 generate pseudo_object
+source activate r403
+output="/home/zhengjh/projects/PinealGland/snakemake/data/"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_retina.rds"
+filelabel="zebrafish_retina"
+generate_pseudo_object.r -o $output --seurat_object_path $seurat_object_path --filelabel ${filelabel}
+
+## downstream analysis
+source activate r403
+output=" /home/zhengjh/projects/PinealGland/analysis_downstream/zebrafish_retina"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_retina_selected.rds"
+filelabel="zebrafish_retina"
+mt_rb_pattern="^mt-|^rpl|^rps"
+tf_path=/home/zhengjh/projects/PinealGland/data/TFdatabase/Danio_rerio_TF.txt
+orgdb_name="org.Dr.eg.db"
+pseudodata_path="/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_retina.PseudoCell.seurat_selected_celltype.rds"
+gpcr_list_path="/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds"
+org_name="Gene.Symbol.(Zebrafish)"
+lrdb_path="/home/zhengjh/scripts/cellchat/cellchatdb/rm_duplicate_Secreted_Signaling_lr_zebrafish_cellchatdb.rds"
+species1_object="/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_retina.rds"
+species2_object="/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_pineal.rds"
+species1_marker="/home/zhengjh/projects/PinealGland/analysis_downstream/zebrafish_retina/MarkersInCluster/zebrafish_retina_MarkersInClusters_min.pct_0.1_logfc.threshold_0.25_p_val_adj_.csv"
+species2_marker="/home/zhengjh/projects/PinealGland/analysis_downstream/zebrafish_pineal/MarkersInCluster/zebrafish_pineal_MarkersInClusters_min.pct_0.1_logfc.threshold_0.25_p_val_adj_.csv"
+species1_name="zebrafish_retina"
+species2_name="zebrafish_pineal"
+
+cd $output
+## step1: cluster plots+marker dot plot + cell percentage
+generate_clusterplots.r -o $output --seurat_object_path $seurat_object_path --filelabel $filelabel --mt_rb_pattern $mt_rb_pattern
+
+## step2: cell type specific TF
+calculate_TFSS.r -o $output --seurat_object_path $seurat_object_path --tf_path  $tf_path --filelabel $filelabel --orgdb_name $orgdb_name
+## step3: cell specific GPCR
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path 
+
+## final_use 还是--min_pct 0.1 --logfc_threshold 0.25
+filelabel="zebrafish_retina_gpcr_pct_0.1_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.1 --logfc_threshold 0.25
+
+filelabel="zebrafish_retina_gpcr_pct_0.25_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.25 --logfc_threshold 0.25
+
+## step4: cell type similarity with other cells
+cal_cell_similarity.r -o  $output --species1_object $species1_object --species2_object $species2_object --species1_marker $species1_marker --species2_marker $species2_marker --species1_name $species1_name --species2_name $species2_name
+## step5: cell-cell interaction
+run_single_cellchat.r -o $output --seurat_object_path $seurat_object_path --lrdb_path $lrdb_path
+
+# nohup sh zebrafish_pineal_downstream.sh >z_pineal.log 2>&1 &
+
+##### 2. rat #####
+## step0 generate pseudo_object
+source activate r403
+output="/home/zhengjh/projects/PinealGland/snakemake/data/"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/rat_retina.rds"
+filelabel="rat_retina"
+generate_pseudo_object.r -o $output --seurat_object_path $seurat_object_path --filelabel ${filelabel}
+
+### downstream analysis 
+source activate r403
+output=" /home/zhengjh/projects/PinealGland/analysis_downstream/rat_retina"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/rat_retina_selected.rds"
+filelabel="rat_retina"
+mt_rb_pattern="^Mt-|^Rpl|^Rps"
+tf_path="/home/zhengjh/projects/PinealGland/data/TFdatabase/Rattus_norvegicus_TF.txt"
+orgdb_name="org.Rn.eg.db"
+pseudodata_path="/home/zhengjh/projects/PinealGland/snakemake/data/rat_retina.PseudoCell.seurat_selected.rds"
+gpcr_list_path="/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds"
+org_name="Gene.Symbol.(Rat)"
+lrdb_path="/home/zhengjh/scripts/cellchat/cellchatdb/rm_duplicate_Secreted_Signaling_lr_rat_cellchatdb.rds"
+species1_object="/home/zhengjh/projects/PinealGland/snakemake/data/rat_retina.rds"
+species2_object="/home/zhengjh/projects/PinealGland/snakemake/data/rat_pineal.rds"
+species1_marker="/home/zhengjh/projects/PinealGland/analysis_downstream/rat_retina/MarkersInCluster/rat_retina_MarkersInClusters_min.pct_0.1_logfc.threshold_0.25_p_val_adj_.csv"
+species2_marker="/home/zhengjh/projects/PinealGland/analysis_downstream/rat_pineal/MarkersInCluster/rat_pineal_MarkersInClusters_min.pct_0.1_logfc.threshold_0.25_p_val_adj_.csv"
+species1_name="rat_retina"
+species2_name="rat_pineal"
+cd $output
+## step1: cluster plots+marker dot plot + cell percentage
+generate_clusterplots.r -o $output --seurat_object_path $seurat_object_path --filelabel $filelabel --mt_rb_pattern $mt_rb_pattern
+
+## step2: cell type specific TF
+calculate_TFSS.r -o $output --seurat_object_path $seurat_object_path --tf_path  $tf_path --filelabel $filelabel --orgdb_name $orgdb_name
+## step3: cell specific GPCR
+
+## 最终还是使用min.pct 0.1 fc 0.25
+filelabel="rat_retina_gpcr_pct_0.1_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.1 --logfc_threshold 0.25
+
+filelabel="rat_retina_gpcr_pct_0.25_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.25 --logfc_threshold 0.25
+
+## step4: cell type similarity with other cells
+cal_cell_similarity.r -o  $output --species1_object $species1_object --species2_object $species2_object --species1_marker $species1_marker --species2_marker $species2_marker --species1_name $species1_name --species2_name $species2_name
+## step5: cell-cell interaction
+run_single_cellchat.r -o $output --seurat_object_path $seurat_object_path --lrdb_path $lrdb_path
+
+##### 3. monkey ########
+## step0 generate pseudo_object
+source activate r403
+output="/home/zhengjh/projects/PinealGland/snakemake/data/"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/monkey_retina.rds"
+filelabel="monkey_retina"
+generate_pseudo_object.r -o $output --seurat_object_path $seurat_object_path --filelabel ${filelabel}
+
+### downstream analysis 
+source activate r403
+output=" /home/zhengjh/projects/PinealGland/analysis_downstream/monkey_retina"
+seurat_object_path="/home/zhengjh/projects/PinealGland/snakemake/data/monkey_retina_selected.rds"
+filelabel="monkey_retina"
+mt_rb_pattern="^MT-|^RPL|^RPS"
+tf_path="/home/zhengjh/projects/PinealGland/data/TFdatabase/Macaca_fascicularis_TF.txt"
+orgdb_name="org.Mmu.eg.db"
+pseudodata_path="/home/zhengjh/projects/PinealGland/snakemake/data/monkey_retina.PseudoCell.seurat_selected.rds"
+gpcr_list_path="/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds"
+org_name="Gene.Symbol(Crab-eating.monkey)"
+lrdb_path="/home/zhengjh/scripts/cellchat/cellchatdb/rm_duplicate_Secreted_Signaling_lr_monkey_cellchatdb.rds"
+species1_object="/home/zhengjh/projects/PinealGland/snakemake/data/monkey_retina.rds"
+species2_object="/home/zhengjh/projects/PinealGland/snakemake/data/monkey_pineal.rds"
+species1_marker="/home/zhengjh/projects/PinealGland/analysis_downstream/monkey_retina/MarkersInCluster/monkey_retina_MarkersInClusters_min.pct_0.1_logfc.threshold_0.25_p_val_adj_.csv"
+species2_marker="/home/zhengjh/projects/PinealGland/analysis_downstream/monkey_pineal/MarkersInCluster/monkey_pineal_MarkersInClusters_min.pct_0.1_logfc.threshold_0.25_p_val_adj_.csv"
+species1_name="monkey_retina"
+species2_name="monkey_pineal"
+cd $output
+## step1: cluster plots+marker dot plot + cell percentage
+generate_clusterplots.r -o $output --seurat_object_path $seurat_object_path --filelabel $filelabel --mt_rb_pattern $mt_rb_pattern
+
+## step2: cell type specific TF
+calculate_TFSS.r -o $output --seurat_object_path $seurat_object_path --tf_path  $tf_path --filelabel $filelabel --orgdb_name $orgdb_name
+## step3: cell specific GPCR
+
+## 最终还是使用min.pct 0.1 fc 0.25
+filelabel="monkey_retina_gpcr_pct_0.1_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.1 --logfc_threshold 0.25
+
+filelabel="monkey_retina_gpcr_pct_0.25_fc_0.25"
+select_cell_gpcr.R -o $output --seurat_object_path $seurat_object_path --pseudodata_path $pseudodata_path --filelabel $filelabel --gpcr_list_path $gpcr_list_path --org_name $org_name --lrdb_path $lrdb_path --min_pct 0.25 --logfc_threshold 0.25
+
+## step4: cell type similarity with other cells
+cal_cell_similarity.r -o  $output --species1_object $species1_object --species2_object $species2_object --species1_marker $species1_marker --species2_marker $species2_marker --species1_name $species1_name --species2_name $species2_name
+## step5: cell-cell interaction
+run_single_cellchat.r -o $output --seurat_object_path $seurat_object_path --lrdb_path $lrdb_path
+
+```

@@ -1,0 +1,2183 @@
+---
+title: "phototransduction_melatonin_circadian_gene_analysis"
+author: "Jihong Zheng"
+date: "2023-06-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 20230611 看下光转导通路相关基因在三个物种的单细胞数据中的表达情况，点图绘制，物种分开来画
+```{r}
+
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+
+## 在各自物种的表达, 没有用整合的数据
+used_gene <- read.xlsx("PhototransductionGene.xlsx")
+
+genetype_color <- data.frame(genetype = c("Opsin", "RCVRN", "GRK", "ARR", "Transducin",
+																					"PDE6", "GTPA", "GC", "GCAP", "NCKX", "CNG", "CA", "Phosducin"),
+														 color = c("#CAFF50", "#AD949C", "#FD80B0", "#AFC6E8", "#74BBCA", 
+														 					"#DD9DE5", "#C374D1", "#F9EE00", "#2AA7E0", "#FFD32C", "#01AB88", "#AA850F", "#90B767"))
+rownames(genetype_color) <- genetype_color$genetype
+
+library(ggplot2)
+library(ggrepel)
+library(scales)
+
+# pct.exp > 0.01
+# avg.exp > 0.1
+gene_plot <- function(seurat_object, used_geneset, interestgenes, genetype_color, table_index, pct.exp.thr = 0.01, avg.exp.thr = 0.1){
+	
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > pct.exp.thr, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > avg.exp.thr, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+  gene_avg_info$genename <- as.character(gene_avg_info$genename)
+  gene_avg_info$genetype <- used_geneset$Class[match(gene_avg_info$genename, used_geneset[, table_index])]
+  
+  # Sort unique gene types by the order of genetype_color
+  unique_genetypes <- unique(as.character(gene_avg_info$genetype))
+  unique_genetypes_ordered <- unique_genetypes[match(genetype_color$genetype, unique_genetypes)]
+  
+  # Convert genetype to ordered factor
+  gene_avg_info$genetype <- factor(gene_avg_info$genetype, levels = unique_genetypes_ordered, ordered = TRUE)
+  
+  node_color <- genetype_color$color[match(unique_genetypes_ordered, genetype_color$genetype)] 
+  
+  # Plot
+  p1 <- ggplot(gene_avg_info, aes(x = genetype, y = log2(avg.exp), size = pct.exp, label = genename, color = genetype))
+  p1 <- p1 + geom_point(alpha = 0.7) + facet_wrap(~celltype, ncol = 2) 
+  p1 <- p1 + geom_label_repel(aes(label = genename), nudge_y = 0.3, color = "black", min.segment.length = 0.1, size = 2.5, max.overlaps = Inf) 
+  p1 <- p1 + scale_color_manual(values = node_color)
+  p1 <- p1 + labs(x = "Phototransduction Gene Module", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+  p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+  p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+  
+  # Set y-axis limits and tick marks
+  p1 <- p1 + ylim(-10, 10) + scale_y_continuous(breaks = seq(-10, 10, 2), limits = c(-10, 10))
+  # Set size limits and tick marks
+  p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+  return(p1)
+}
+### zebrafish 
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+expressed_genes <- rownames(zebrafish)[rownames(zebrafish) %in% used_gene$ZebrafishGenename]
+table(zebrafish@active.ident)
+p_zebrafish <- gene_plot(seurat_object = zebrafish, used_geneset = used_gene,interestgenes = expressed_genes, genetype_color = genetype_color, table_index = "ZebrafishGenename")
+
+pdf("20230612_zebrafish_dotplot_phototransductiongene.pdf", width = 18, height = 20)
+p_zebrafish
+dev.off()
+
+### rat
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+table(rat@active.ident)
+p_rat <- gene_plot(seurat_object = rat, used_geneset = used_gene,interestgenes = expressed_genes, genetype_color = genetype_color, table_index = "RatGenename")
+
+pdf("20230612_rat_dotplot_phototransductiongene.pdf", width = 18, height = 15)
+p_rat
+dev.off()
+
+### monkey
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+expressed_genes <- rownames(monkey)[rownames(monkey) %in% unique(used_gene$MonkeyGenename)]
+table(monkey@active.ident)
+p_monkey <- gene_plot(seurat_object = monkey, used_geneset = used_gene,interestgenes = expressed_genes, genetype_color = genetype_color, table_index = "MonkeyGenename")
+
+pdf("20230612_monkey_dotplot_phototransductiongene.pdf", width = 18, height = 20)
+p_monkey
+dev.off()
+
+### 最终用的是这个结果: 斑马鱼的两个细胞感光细胞合在一起，大鼠的松果体细胞合在一起
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+
+## 在各自物种的表达, 没有用整合的数据
+used_gene <- read.xlsx("PhototransductionGene.xlsx")
+
+genetype_color <- data.frame(genetype = c("Opsin", "RCVRN", "GRK", "ARR", "Transducin",
+																					"PDE6", "GTPA", "GC", "GCAP", "NCKX", "CNG", "CA", "Phosducin"),
+														 color = c("#CAFF50", "#AD949C", "#FD80B0", "#AFC6E8", "#74BBCA", 
+														 					"#DD9DE5", "#C374D1", "#F9EE00", "#2AA7E0", "#FFD32C", "#01AB88", "#AA850F", "#90B767"))
+
+library(ggplot2)
+library(ggrepel)
+library(scales)
+# pct.exp.thr = 0.01
+# avg.exp.thr = 0.1
+
+gene_plot <- function(seurat_object, used_geneset, interestgenes, genetype_color, table_index, 
+											pct.exp.thr = 0.01, avg.exp.thr = 0.1){
+  
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > pct.exp.thr, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > avg.exp.thr, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+  gene_avg_info$genename <- as.character(gene_avg_info$genename)
+  gene_avg_info$genetype <- used_geneset$Class[match(gene_avg_info$genename, used_geneset[, table_index])]
+  
+  # Sort unique gene types by the order of genetype_color
+  unique_genetypes <- unique(as.character(gene_avg_info$genetype))
+  unique_genetypes_ordered <- unique_genetypes[match(genetype_color$genetype, unique_genetypes)]
+  
+  # Convert genetype to ordered factor
+  gene_avg_info$genetype <- factor(gene_avg_info$genetype, levels = unique_genetypes_ordered, ordered = TRUE)
+  
+  node_color <- genetype_color$color[match(unique_genetypes_ordered, genetype_color$genetype)] 
+  
+  # Plot
+  p1 <- ggplot(gene_avg_info, aes(x = genetype, y = log2(avg.exp), size = pct.exp, label = genename, color = genetype))
+  p1 <- p1 + geom_point(alpha = 0.7) + facet_wrap(~celltype, ncol = 2) 
+  p1 <- p1 + geom_label_repel(aes(label = genename), nudge_y = 0.3, color = "black", min.segment.length = 0.1, size = 2.5, max.overlaps = Inf) 
+  p1 <- p1 + scale_color_manual(values = node_color)
+  p1 <- p1 + labs(x = "Phototransduction Gene Module", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+  p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+  p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+  
+  # Set y-axis limits and tick marks
+  p1 <- p1 + ylim(-10, 10) + scale_y_continuous(breaks = seq(-10, 10, 2), limits = c(-10, 10))
+  # Set size limits and tick marks
+  p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+  return(p1)
+}
+
+### zebrafish 
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+zebrafish$celltype_assign <- gsub("Cone-like photoreceptors", "photoreceptors", zebrafish$celltype_assign)
+zebrafish$celltype_assign <- gsub("Rod-like photoreceptors", "photoreceptors", zebrafish$celltype_assign)
+zebrafish@active.ident <- factor(zebrafish$celltype_assign , levels = c("photoreceptors", "Retinal pigment epithelium-like", "Muller glia-like",
+																																				"Microglia", "Neuron", "VLMCs","Endothelial"))
+
+table(zebrafish@active.ident)
+expressed_genes <- rownames(zebrafish)[rownames(zebrafish) %in% used_gene$ZebrafishGenename]
+table(zebrafish@active.ident)
+p_zebrafish <- gene_plot(seurat_object = zebrafish, used_geneset = used_gene,interestgenes = expressed_genes, genetype_color = genetype_color, table_index = "ZebrafishGenename")
+
+pdf("20230612_zebrafish_dotplot_phototransductiongene_combine_two_photoreceptors.pdf", width = 18, height = 20)
+p_zebrafish
+dev.off()
+
+### rat
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+rat$celltype_assign <- gsub("α-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- gsub("β-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat@active.ident <- factor(rat$celltype_assign, levels = c("pinealocyte", "Astrocyte", "Microglia", "VLMCs", "Endothelial"))
+
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+
+p_rat <- gene_plot(seurat_object = rat, used_geneset = used_gene,interestgenes = expressed_genes, genetype_color = genetype_color, table_index = "RatGenename")
+
+p_rat$data$genetype <- factor(as.character(p_rat$data$genetype), levels = levels(p_zebrafish$data$genetype))
+pdf("20230612_rat_dotplot_phototransductiongene_combine.pdf", width = 18, height = 15)
+p_rat
+dev.off()
+
+### monkey
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+expressed_genes <- rownames(monkey)[rownames(monkey) %in% unique(used_gene$MonkeyGenename)]
+table(monkey@active.ident)
+p_monkey <- gene_plot(seurat_object = monkey, used_geneset = used_gene,interestgenes = expressed_genes, genetype_color = genetype_color, table_index = "MonkeyGenename")
+
+pdf("20230612_monkey_dotplot_phototransductiongene.pdf", width = 18, height = 20)
+p_monkey
+dev.off()
+
+### combine pineal results
+p_pineal_data <- rbind(p_zebrafish$data[p_zebrafish$data$celltype %in% c("photoreceptors"), ],
+											 p_rat$data[p_rat$data$celltype %in% c("pinealocyte"), ], 
+											 p_monkey$data[p_monkey$data$celltype %in% c("Pinealocyte"), ])
+
+p_pineal_data$celltype <- gsub("photoreceptors", "zebrafish_photoreceptors", p_pineal_data$celltype)
+p_pineal_data$celltype <- gsub("pinealocyte", "rat_pinealocyte", p_pineal_data$celltype)
+p_pineal_data$celltype <- gsub("Pinealocyte", "monkey_pinealocyte", p_pineal_data$celltype)
+p_pineal_data$celltype <- factor(as.character(p_pineal_data$celltype), levels = c("zebrafish_photoreceptors",
+																																									"rat_pinealocyte",
+																																									"monkey_pinealocyte"))
+
+p_pineal <- p_zebrafish
+p_pineal$data <- p_pineal_data
+p_pineal <- p_pineal + facet_wrap(~celltype, ncol = 1) 
+
+pdf("20230612_final_pinealocyte_three_species_dotplot_phototransductiongene.pdf", width = 10, height = 14)
+p_pineal
+dev.off()
+
+### combine glia results
+p_glial_data <- rbind(p_zebrafish$data[p_zebrafish$data$celltype %in% c("Retinal pigment epithelium-like", "Muller glia-like"), ],
+											 p_rat$data[p_rat$data$celltype %in% c("Astrocyte"), ])
+
+p_glial_data$celltype <- gsub("photoreceptors", "zebrafish_photoreceptors", p_glial_data$celltype)
+p_glial_data$celltype <- gsub("Astrocyte", "rat_astrocyte", p_glial_data$celltype)
+p_glial_data <- rbind(p_glial_data, p_monkey$data[p_monkey$data$celltype %in% c("Astrocyte"), ])
+p_glial_data$celltype <- gsub("Astrocyte", "monkey_astrocyte", p_glial_data$celltype)
+
+p_glial_data$celltype <- factor(as.character(p_glial_data$celltype), levels = c("Retinal pigment epithelium-like", "Muller glia-like",
+																																									"rat_astrocyte",
+																																									"monkey_astrocyte"))
+
+p_glial <- p_zebrafish
+p_glial$data <- p_glial_data
+p_glial <- p_glial + facet_wrap(~celltype, ncol = 1) 
+
+pdf("20230612_final_glial_three_species_dotplot_phototransductiongene.pdf", width = 10, height = 20)
+p_glial
+dev.off()
+
+res <- list(zebrafish = p_zebrafish$data, rat = p_rat$data, monkey = p_monkey$data)
+res$zebrafish$log2.avg.exp <- log2(res$zebrafish$avg.exp)
+res$rat$log2.avg.exp <- log2(res$rat$avg.exp)
+res$monkey$log2.avg.exp <- log2(res$monkey$avg.exp)
+
+write.xlsx(res, "20230613_threespecies_PhototransdcutionGene_average_expression.xlsx", colNames = T, rowNames = T)
+
+#### 看下大鼠中night的数据中光转导基因的表达情况
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+
+gene_plot <- function(seurat_object, used_geneset, interestgenes, genetype_color, table_index, pct.exp.thr = 0.01, avg.exp.thr = 0.1){
+  
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > pct.exp.thr, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > avg.exp.thr, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+  gene_avg_info$genename <- as.character(gene_avg_info$genename)
+  gene_avg_info$genetype <- used_geneset$Class[match(gene_avg_info$genename, used_geneset[, table_index])]
+  
+  # Sort unique gene types by the order of genetype_color
+  unique_genetypes <- unique(as.character(gene_avg_info$genetype))
+  unique_genetypes_ordered <- unique_genetypes[match(genetype_color$genetype, unique_genetypes)]
+  
+  # Convert genetype to ordered factor
+  gene_avg_info$genetype <- factor(gene_avg_info$genetype, levels = unique_genetypes_ordered, ordered = TRUE)
+  
+  node_color <- genetype_color$color[match(unique_genetypes_ordered, genetype_color$genetype)] 
+  
+  # Plot
+  p1 <- ggplot(gene_avg_info, aes(x = genetype, y = log2(avg.exp), size = pct.exp, label = genename, color = genetype))
+  p1 <- p1 + geom_point(alpha = 0.7) + facet_wrap(~celltype, ncol = 2) 
+  p1 <- p1 + geom_label_repel(aes(label = genename), nudge_y = 0.3, color = "black", min.segment.length = 0.1, size = 2.5, max.overlaps = Inf) 
+  p1 <- p1 + scale_color_manual(values = node_color)
+  p1 <- p1 + labs(x = "Phototransduction Gene Module", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+  p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+  p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+  
+  # Set y-axis limits and tick marks
+  p1 <- p1 + ylim(-10, 10) + scale_y_continuous(breaks = seq(-10, 10, 2), limits = c(-10, 10))
+  # Set size limits and tick marks
+  p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+  return(p1)
+}
+
+## 在各自物种的表达, 没有用整合的数据
+used_gene <- read.xlsx("PhototransductionGene.xlsx")
+
+genetype_color <- data.frame(genetype = c("Opsin", "RCVRN", "GRK", "ARR", "Transducin",
+																					"PDE6", "GTPA", "GC", "GCAP", "NCKX", "CNG", "CA", "Phosducin"),
+														 color = c("#CAFF50", "#AD949C", "#FD80B0", "#AFC6E8", "#74BBCA", 
+														 					"#DD9DE5", "#C374D1", "#F9EE00", "#2AA7E0", "#FFD32C", "#01AB88", "#AA850F", "#90B767"))
+
+library(ggplot2)
+library(ggrepel)
+library(scales)
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_all_day_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+rat <- subset(rat, orig.ident %in% c("GSM3188347_Pineal_Gland_Night_1", "GSM3188349_Pineal_Gland_Night_2"))
+rat$celltype_assign <- factor(as.character(rat@active.ident),
+													 levels = c("α-pinealocyte", "β-pinealocyte", "Astrocyte", "Microglia", "VLMCs", "Endothelial"))
+rat@active.ident <- rat$celltype_assign
+## 分开两种松果体细胞
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+table(rat@active.ident)
+p_rat <- gene_plot(seurat_object = rat, used_geneset = used_gene,interestgenes = expressed_genes, genetype_color = genetype_color, table_index = "RatGenename")
+
+pdf("20230613_rat_night_dotplot_phototransductiongene.pdf", width = 18, height = 15)
+p_rat
+dev.off()
+
+## combine 两种松果体细胞
+rat$celltype_assign <- gsub("α-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- gsub("β-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat@active.ident <- factor(rat$celltype_assign, levels = c("pinealocyte", "Astrocyte", "Microglia", "VLMCs", "Endothelial"))
+
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+
+p_rat_combine <- gene_plot(seurat_object = rat, used_geneset = used_gene,interestgenes = expressed_genes, genetype_color = genetype_color, table_index = "RatGenename")
+
+pdf("20230612_rat_night_dotplot_phototransductiongene_combine.pdf", width = 18, height = 15)
+p_rat_combine
+dev.off()
+
+
+res <- list(rat_single_night = p_rat$data, rat_combine_night = p_rat_combine$data)
+res$rat_single_night$log2.avg.exp <- log2(res$rat_single_night$avg.exp)
+res$rat_combine_night$log2.avg.exp <- log2(res$rat_combine_night$avg.exp)
+
+write.xlsx(res, "20230613_rat_night_PhototransdcutionGene_average_expression.xlsx", colNames = T, rowNames = T)
+
+# 大鼠中 Rcvrn, Opn3, Rrh 的FeaturePlot
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+
+pdf("20230625_rat_day_featureplot_Rcvrn_Opn3_Rrh.pdf", height = 6, width = 16)
+FeaturePlot(rat, features = c("Rcvrn", "Opn3", "Rrh"), order = T, ncol = 3)
+dev.off()
+
+pdf("20230625_rat_day_dotplot_Rcvrn_Opn3_Rrh.pdf", height = 6, width = 6)
+DotPlot(rat, features = c("Rcvrn", "Opn3", "Rrh"), scale = F)
+dev.off()
+
+```
+
+## 20230707 光转导通路相关基因在三个物种单细胞数据中的表达情况，物种，不同相同类型绘制
+
+```{r}
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+library(ggplot2)
+library(ggrepel)
+library(scales)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+
+genetype_color <- data.frame(genetype = c("Opsin", "RCVRN", "GRK", "ARR", "Transducin",
+																					"PDE6", "GTPA", "GC", "GCAP", "NCKX", "CNG", "CA", "Phosducin"),
+														 color = c("#CAFF50", "#AD949C", "#FD80B0", "#AFC6E8", "#74BBCA", 
+														 					"#DD9DE5", "#C374D1", "#F9EE00", "#2AA7E0", "#FFD32C", "#01AB88", "#AA850F", "#90B767"))
+rownames(genetype_color) <- genetype_color$genetype
+
+GenerateGeneAvgInfo <- function(seurat_object, used_geneset, interestgenes, table_index, pct.exp.thr = 0.1, avg.exp.thr = 1){
+	
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > pct.exp.thr, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > avg.exp.thr, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+  gene_avg_info$genename <- as.character(gene_avg_info$genename)
+  gene_avg_info$genetype <- used_geneset$Class[match(gene_avg_info$genename, used_geneset[, table_index])]
+  
+   # Sort unique gene types by the order of genetype_color
+  unique_genetypes <- sort(unique(as.character(gene_avg_info$genetype)))
+  # Convert genetype to ordered factor
+  gene_avg_info$genetype <- factor(gene_avg_info$genetype, levels = unique_genetypes)
+  return(gene_avg_info)
+}
+
+## 在各自物种的表达, 没有用整合的数据
+used_gene <- read.xlsx("PhototransductionGene.xlsx")
+
+# pct.exp > 0.1
+# avg.exp > 1
+### zebrafish 
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+#zebrafish$celltype_assign <- gsub("Cone-like photoreceptors", "Photoreceptors", zebrafish$celltype_assign)
+#zebrafish$celltype_assign <- gsub("Rod-like photoreceptors", "Photoreceptors", zebrafish$celltype_assign)
+#zebrafish@active.ident <- factor(zebrafish$celltype_assign , levels = c("Photoreceptors", "Retinal pigment epithelium-like", "Muller glia-like",
+#																																			"Microglia", "Neuron", "VLMCs","Endothelial"))
+expressed_genes <- rownames(zebrafish)[rownames(zebrafish) %in% unique(used_gene$ZebrafishGenename)]
+table(zebrafish@active.ident)
+z_gene_avg_info <- GenerateGeneAvgInfo(seurat_object = zebrafish, used_geneset = used_gene, 
+																			 interestgenes = expressed_genes, table_index = "ZebrafishGenename",  pct.exp.thr = 0.1, avg.exp.thr = 1)
+z_gene_avg_info$species <- "zebrafish"
+index <- z_gene_avg_info$celltype %in% c("Rod-like photoreceptors", "Cone-like photoreceptors",
+																									 "Retinal pigment epithelium-like", "Muller glia-like")
+z_gene_avg_info <- z_gene_avg_info[index, ]
+### rat
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+#rat$celltype_assign <- gsub("α-pinealocyte", "Pinealocyte", rat$celltype_assign)
+#rat$celltype_assign <- gsub("β-pinealocyte", "Pinealocyte", rat$celltype_assign)
+#rat@active.ident <- factor(rat$celltype_assign, levels = c("Pinealocyte", "Astrocyte", "Microglia", "VLMCs", "Endothelial"))
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+table(rat@active.ident)
+r_gene_avg_info <- GenerateGeneAvgInfo(seurat_object = rat, used_geneset = used_gene, 
+														 interestgenes = expressed_genes,  table_index = "RatGenename",  pct.exp.thr = 0.1, avg.exp.thr = 1)
+r_gene_avg_info$species <- "rat"
+index <- r_gene_avg_info$celltype %in% c("α-pinealocyte", "β-pinealocyte", "Astrocyte")
+r_gene_avg_info <- r_gene_avg_info[index, ]
+
+### monkey
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+expressed_genes <- rownames(monkey)[rownames(monkey) %in% unique(used_gene$MonkeyGenename)]
+table(monkey@active.ident)
+m_gene_avg_info <- GenerateGeneAvgInfo(seurat_object = monkey, used_geneset = used_gene, 
+																			 interestgenes = expressed_genes, table_index = "MonkeyGenename", pct.exp.thr = 0.1, avg.exp.thr = 1)
+m_gene_avg_info$species <- "monkey"
+index <- m_gene_avg_info$celltype %in% c("Pinealocyte",  "Astrocyte")
+m_gene_avg_info <- m_gene_avg_info[index, ]
+# interested_plot
+PlotFunc <- function(plot_data, node_color){
+	p1 <- ggplot(plot_data, aes(x = celltype, y = log2(avg.exp), 
+															size = pct.exp, label = genename, color = genetype))
+	p1 <- p1 + geom_point(alpha = 0.7) 
+	p1 <- p1 + scale_color_manual(values = node_color)
+
+	p1 <- p1 + geom_text_repel(aes(label = genename), nudge_y = 0.3, color = "black",min.segment.length = 0.1, size = 2.5, max.overlaps = Inf)
+
+	p1 <- p1 + labs(x = "Phototransduction Gene Module", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+	p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+	p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"), 
+								 axis.text.x = element_text(angle = 45, hjust = 1))
+
+	# Set y-axis limits and tick marks
+	p1 <- p1 + ylim(0, 10) + scale_y_continuous(breaks = seq(0, 10, 2), limits = c(0, 10))
+# Set size limits and tick marks
+	p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+	return(p1)
+}
+
+## zebrafish
+node_color <- genetype_color$color[match(levels(z_gene_avg_info$genetype), genetype_color$genetype)] 
+z_p <- PlotFunc(plot_data = z_gene_avg_info, node_color)
+z_p <- z_p + NoLegend()
+## rat 
+node_color <- genetype_color$color[match(levels(r_gene_avg_info$genetype), genetype_color$genetype)] 
+r_p <- PlotFunc(plot_data = r_gene_avg_info, node_color)
+r_p <- r_p + NoLegend()
+## monkey
+node_color <- genetype_color$color[match(levels(m_gene_avg_info$genetype), genetype_color$genetype)] 
+m_p <- PlotFunc(plot_data = m_gene_avg_info, node_color)
+
+plots <- plot_grid(z_p, r_p, m_p, ncol = 3, rel_widths = c(1, 0.9, 0.9), align = "hv")
+
+pdf("20230709_PhototransductionGene_in_Pinealocyte_Glia.pdf", width = 18, height = 12)
+plots
+dev.off()
+
+plot_data <- rbind(z_p$data, r_p$data, m_p$data)
+write.xlsx(plot_data, "20230709_table_PhototransductionGene_in_Pinealocyte_Glia.xlsx")
+
+
+## rat night 数据中
+rm(list = ls())
+library(ggplot2)
+library(ggrepel)
+library(scales)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+used_gene <- read.xlsx("PhototransductionGene.xlsx")
+
+genetype_color <- data.frame(genetype = c("Opsin", "RCVRN", "GRK", "ARR", "Transducin",
+																					"PDE6", "GTPA", "GC", "GCAP", "NCKX", "CNG", "CA", "Phosducin"),
+														 color = c("#CAFF50", "#AD949C", "#FD80B0", "#AFC6E8", "#74BBCA", 
+														 					"#DD9DE5", "#C374D1", "#F9EE00", "#2AA7E0", "#FFD32C", "#01AB88", "#AA850F", "#90B767"))
+rownames(genetype_color) <- genetype_color$genetype
+
+
+GenerateGeneAvgInfo <- function(seurat_object, used_geneset, interestgenes, table_index, pct.exp.thr = 0.1, avg.exp.thr = 1){
+	
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > pct.exp.thr, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > avg.exp.thr, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+  gene_avg_info$genename <- as.character(gene_avg_info$genename)
+  gene_avg_info$genetype <- used_geneset$Class[match(gene_avg_info$genename, used_geneset[, table_index])]
+  
+   # Sort unique gene types by the order of genetype_color
+  unique_genetypes <- sort(unique(as.character(gene_avg_info$genetype)))
+  # Convert genetype to ordered factor
+  gene_avg_info$genetype <- factor(gene_avg_info$genetype, levels = unique_genetypes)
+  return(gene_avg_info)
+}
+
+PlotFunc <- function(plot_data, node_color){
+	p1 <- ggplot(plot_data, aes(x = celltype, y = log2(avg.exp), 
+															size = pct.exp, label = genename, color = genetype))
+	p1 <- p1 + geom_point(alpha = 0.7) 
+	p1 <- p1 + scale_color_manual(values = node_color)
+
+	p1 <- p1 + geom_text_repel(aes(label = genename), nudge_y = 0.3, color = "black",min.segment.length = 0.1, size = 2.5, max.overlaps = Inf)
+
+	p1 <- p1 + labs(x = "Phototransduction Gene Module", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+	p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+	p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"), 
+								 axis.text.x = element_text(angle = 45, hjust = 1))
+
+	# Set y-axis limits and tick marks
+	p1 <- p1 + ylim(0, 10) + scale_y_continuous(breaks = seq(0, 10, 2), limits = c(0, 10))
+# Set size limits and tick marks
+	p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+	return(p1)
+}
+
+node_color <- genetype_color$color[match(levels(r_gene_avg_info$genetype), genetype_color$genetype)] 
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_all_day_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+rat <- subset(rat, orig.ident %in% c("GSM3188347_Pineal_Gland_Night_1", "GSM3188349_Pineal_Gland_Night_2"))
+rat$celltype_assign <- factor(as.character(rat@active.ident),
+													 levels = c("α-pinealocyte", "β-pinealocyte", "Astrocyte", "Microglia", "VLMCs", "Endothelial"))
+rat@active.ident <- rat$celltype_assign
+
+## 分开两种松果体细胞
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+table(rat@active.ident)
+
+r_gene_avg_info <- GenerateGeneAvgInfo(seurat_object = rat, used_geneset = used_gene, 
+														 interestgenes = expressed_genes,  table_index = "RatGenename",  
+														 pct.exp.thr = 0.1, avg.exp.thr = 1)
+r_gene_avg_info$species <- "rat"
+index <- r_gene_avg_info$celltype %in% c("α-pinealocyte", "β-pinealocyte", "Astrocyte")
+r_gene_avg_info <- r_gene_avg_info[index, ]
+
+node_color <- genetype_color$color[match(levels(r_gene_avg_info$genetype), genetype_color$genetype)] 
+r_p <- PlotFunc(plot_data = r_gene_avg_info, node_color)
+
+
+pdf("20230709_rat_night_phototranductiongene_dotplot.pdf", width = 8, height = 8)
+r_p
+dev.off()
+
+write.csv(r_gene_avg_info, "20230709_rat_night_phototranductiongene_exp.csv")
+
+
+```
+
+## 20230614 看下光转导相关基因在物种的total RNA-seq数据中Day/Night的水平，加一下rat Day/Night中松果体细胞的表达水平，全部细胞的Day/Night的表达水平
+```{r bulk data phototransduction gene}
+## 这边需要计算下monkey bulk三个replicate中是否有异常值，异常值的话需要排除
+rm(list = ls())
+
+# Set working directory
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+
+# Load necessary packages
+library(Seurat)
+library(openxlsx)
+
+# Read in the gene expression data
+bulk_files <- "20230614_used_pineal_gland_totalRNAseq.xlsx"
+df <- read.xlsx(bulk_files, sheet = 4, colNames = T)
+
+# Extract the expression data for the day and night samples
+expr_day <- df[, c("Pineal.Day-1", "Pineal.Day-2", "Pineal.Day-3")]
+expr_night <- df[, c("Pineal.Night-1", "Pineal.Night-2", "Pineal.Night-3")]
+
+# Set the threshold for CV
+threshold <- 0.5
+
+# Calculate the mean and standard deviation for each gene in the day and night samples
+mean_day <- rowMeans(expr_day)
+mean_night <- rowMeans(expr_night)
+sd_day <- apply(expr_day, 1, sd)
+sd_night <- apply(expr_night, 1, sd)
+
+# Calculate the CV for each gene in the day and night samples
+cv_day <- sd_day / mean_day
+cv_night <- sd_night / mean_night
+
+# Check if any of the CVs are greater than the threshold in either sample
+to_exclude <- cv_day > threshold | cv_night > threshold
+to_exclude[is.na(to_exclude)] <- FALSE
+# If any CVs are greater than the threshold, check which sample has the outlier
+if (any(to_exclude)) {
+  # Find the sample(s) with the outlier for each gene in the day sample
+outlier_day <- apply(expr_day, 1, function(x) which(abs(x - median(x, na.rm = TRUE)) > 1 * mad(x, na.rm = TRUE)))
+
+# Find the sample(s) with the outlier for each gene in the night sample
+outlier_night <- apply(expr_night, 1, function(x) which(abs(x - median(x, na.rm = TRUE)) > 1 * mad(x, na.rm = TRUE)))
+
+# Set the expression values to NA for genes with outliers in the day sample
+for (i in seq_along(outlier_day)) {
+  if (length(outlier_day[[i]]) > 0) {
+    expr_day[i, outlier_day[[i]]] <- NA
+  }
+}
+
+# Set the expression values to NA for genes with outliers in the night sample
+for (i in seq_along(outlier_night)) {
+  if (length(outlier_night[[i]]) > 0) {
+    expr_night[i, outlier_night[[i]]] <- NA
+  }
+}
+
+# Recalculate the mean and standard deviation for each gene in the day and night samples after setting NA values
+  mean_day <- rowMeans(expr_day, na.rm = TRUE)
+  mean_night <- rowMeans(expr_night, na.rm = TRUE)
+  sd_day <- apply(expr_day, 1, sd, na.rm = TRUE)
+  sd_night <- apply(expr_night, 1, sd, na.rm = TRUE)
+
+  # Recalculate the CV for each gene in the day and night samples after setting NA values
+  cv_day <- sd_day / mean_day
+  cv_night <- sd_night / mean_night
+}
+
+# Create a data frame with the mean, standard deviation, and CV for each gene
+result_df <- data.frame(mean_day, mean_night, sd_day, sd_night, cv_day, cv_night)
+
+# Calculate the day/night ratio for genes with CV less than the threshold
+result_df$ratio_day_night <- ifelse(cv_day < threshold & cv_night < threshold, mean_day / mean_night, NA)
+result_df$ratio_night_day <- ifelse(cv_day < threshold & cv_night < threshold, mean_night / mean_day, NA)
+
+colnames(expr_day) <- paste0("new_", colnames(expr_day))
+colnames(expr_night) <- paste0("new_", colnames(expr_night))
+# Add the result to the original data frame
+df <- cbind(df, result_df)
+df <- cbind(expr_day, expr_night, df )
+# Write the result to a CSV file
+write.csv(df, "20230616_monkey_bulk_pineal_clean_exp_temp_1mad_cv_0.5.csv")
+
+
+#### human data
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+
+bulk_files <- "20230614_used_pineal_gland_totalRNAseq.xlsx"
+df <- read.xlsx(bulk_files, sheet = 5, colNames = T)
+
+expr_day <- df[ , c("human_pineal_gland_day-1", "human_pineal_gland_day-2")]
+expr_night <- df[ ,c("human_pineal_gland_night-1", "human_pineal_gland_night-2", "human_pineal_gland_night-3", "human_pineal_gland_night-4")]
+
+# 假设基因表达数据集为expr_data，其中第1至2列为day样本，第4至6列为night样本
+# Set the threshold for CV
+threshold <- 0.5
+
+# Calculate the mean and standard deviation for each gene in the day and night samples
+mean_day <- rowMeans(expr_day)
+mean_night <- rowMeans(expr_night)
+sd_day <- apply(expr_day, 1, sd)
+sd_night <- apply(expr_night, 1, sd)
+
+# Calculate the CV for each gene in the day and night samples
+cv_day <- sd_day / mean_day
+cv_night <- sd_night / mean_night
+
+# 因为白天只有一个样本, 所以算cv不能知道哪个是离群值
+# Check if any of the CVs are greater than the threshold in either sample
+to_exclude <-  cv_night > threshold
+to_exclude[is.na(to_exclude)] <- FALSE
+# If any CVs are greater than the threshold, check which sample has the outlier
+if (any(to_exclude)) {
+
+# Find the sample(s) with the outlier for each gene in the night sample
+outlier_night <- apply(expr_night, 1, function(x) which(abs(x - median(x, na.rm = TRUE)) > 1 * mad(x, na.rm = TRUE)))
+
+# Set the expression values to NA for genes with outliers in the night sample
+for (i in seq_along(outlier_night)) {
+  if (length(outlier_night[[i]]) > 0) {
+    expr_night[i, outlier_night[[i]]] <- NA
+  }
+}
+
+# Recalculate the mean and standard deviation for each gene in the day and night samples after setting NA values
+  mean_night <- rowMeans(expr_night, na.rm = TRUE)
+  sd_night <- apply(expr_night, 1, sd, na.rm = TRUE)
+
+  # Recalculate the CV for each gene in the day and night samples after setting NA values
+  cv_night <- sd_night / mean_night
+}
+
+# Create a data frame with the mean, standard deviation, and CV for each gene
+result_df <- data.frame(mean_day, mean_night, sd_day, sd_night, cv_day, cv_night)
+
+# Calculate the day/night ratio for genes with CV less than the threshold
+result_df$ratio_day_night <- ifelse(cv_day < threshold & cv_night < threshold, mean_day / mean_night, NA)
+result_df$ratio_night_day <- ifelse(cv_day < threshold & cv_night < threshold, mean_night / mean_day, NA)
+
+colnames(expr_day) <- paste0("new_", colnames(expr_day))
+colnames(expr_night) <- paste0("new_", colnames(expr_night))
+# Add the result to the original data frame
+df <- cbind(df, result_df)
+df <- cbind(expr_day, expr_night, df )
+# Write the result to a CSV file
+write.csv(df, "20230616_human_bulk_pineal_clean_exp_temp_1mad_cv_0.5.csv")
+
+
+## 大鼠中 Day/Night 表达水平
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res/DotPlotPhototransdcutionGene")
+
+## 在各自物种的表达, 没有用整合的数据
+photo_gene <- read.xlsx("PhototransductionGene.xlsx")
+
+genetype_color <- data.frame(genetype = c("Opsin", "RCVRN", "GRK", "ARR", "Transducin",
+																					"PDE6", "GTPA", "GC", "GCAP", "NCKX", "CNG", "CA", "Phosducin"),
+														 color = c("#CAFF50", "#AD949C", "#FD80B0", "#AFC6E8", "#74BBCA", 
+														 					"#DD9DE5", "#C374D1", "#F9EE00", "#2AA7E0", "#FFD32C", "#01AB88", "#AA850F", "#90B767"))
+
+library(ggplot2)
+library(ggrepel)
+library(scales)
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_all_day_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+rat$orig.ident <- gsub("GSM3188347_Pineal_Gland_Night_1", "Night", rat$orig.ident)
+rat$orig.ident <- gsub("GSM3188349_Pineal_Gland_Night_2", "Night", rat$orig.ident)
+rat$orig.ident <- gsub("GSM3188343_Pineal_Gland_Day_1", "Day", rat$orig.ident)
+rat$orig.ident <- gsub("GSM3188345_Pineal_Gland_Day_2", "Day", rat$orig.ident)
+#  Day Night 
+# 5050  7245
+rat$celltype_assign <- as.character(rat@active.ident)
+rat$celltype_assign <- gsub("α-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- gsub("β-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- factor(paste(rat$orig.ident, rat$celltype_assign, sep = "_"))
+rat@active.ident <- rat$celltype_assign
+
+## 分开两种松果体细胞
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(photo_gene$RatGenename)]
+gene_avg_info <- DotPlot(rat, features = expressed_genes)$data
+  # Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+ 
+expressed_genes <- unique(as.character(gene_avg_info$features.plot))
+table(rat@active.ident)
+
+rat_single_cell <- AverageExpression(rat, features = expressed_genes)
+rat_all <- AverageExpression(rat, features = expressed_genes, group.by = "orig.ident")
+rat_single_used_exp <- cbind(rat_all$RNA, rat_single_cell$RNA)
+
+colnames(rat_single_used_exp) <- c("Day_all", "Night_all", colnames(rat_single_cell$RNA))
+rat_single_used_exp <- as.data.frame(rat_single_used_exp)
+
+# Replace zeros in denominator with a small positive number
+#rat_single_used_exp$Night_all[rat_single_used_exp$Night_all == 0] <- 0.0001
+#rat_single_used_exp$Night_pinealocyte[rat_single_used_exp$Night_pinealocyte == 0] <- 0.0001
+#rat_single_used_exp$Night_Astrocyte[rat_single_used_exp$Night_Astrocyte == 0] <- 0.0001
+
+rat_sc_all_ratio <- data.frame(genename = rownames(rat_single_used_exp),
+															 day_value = rat_single_used_exp$Day_all,
+															 night_value = rat_single_used_exp$Night_all,
+															 day_night_ratio = rat_single_used_exp$Day_all/rat_single_used_exp$Night_all, 
+															 night_day_ratio = rat_single_used_exp$Night_all/rat_single_used_exp$Day_all,
+															 group = "rat_sc_allcells")
+rat_sc_pinealocyte <- data.frame(genename = rownames(rat_single_used_exp),
+																 day_value = rat_single_used_exp$Day_pinealocyte,
+															 night_value = rat_single_used_exp$Night_pinealocyte,
+															 day_night_ratio =  rat_single_used_exp$Day_pinealocyte /rat_single_used_exp$Night_pinealocyte, 
+															 night_day_ratio = rat_single_used_exp$Night_pinealocyte /rat_single_used_exp$Day_pinealocyte,
+															 group = "rat_sc_pinealocyte")
+rat_sc_astrocyte <- data.frame(genename = rownames(rat_single_used_exp),
+															 day_value = rat_single_used_exp$Day_Astrocyte,
+															 night_value = rat_single_used_exp$Night_Astrocyte,
+															 day_night_ratio =  rat_single_used_exp$Day_Astrocyte/rat_single_used_exp$Night_Astrocyte, 
+															 night_day_ratio = rat_single_used_exp$Night_Astrocyte/rat_single_used_exp$Day_Astrocyte,
+															 group = "rat_sc_astrocyte")
+single_photo_data <- rbind(rat_sc_all_ratio, rat_sc_pinealocyte, rat_sc_astrocyte )
+
+### bulk RNA-seq 数据
+bulk_files <- "20230614_used_pineal_gland_totalRNAseq.xlsx"
+
+bulk_data <- list()
+for (i in getSheetNames(bulk_files)){
+	bulk_data[[i]] <- read.xlsx(bulk_files, sheet = i)
+}
+
+bulk_photo_data <- data.frame(genename = "1", day_value = 0, night_value = 0, day_night_ratio = 0, night_day_ratio = 0, group = "1")
+map_name <- c("ZebrafishGenename",  "RatGenename", "MonkeyGenename")
+for (i in 1:length(bulk_data)) {
+	list_name <- names(bulk_data)[i]
+	index <- bulk_data[[list_name]]$gene_name %in% photo_gene[, map_name[i]]
+	temp <- bulk_data[[list_name]][index, ]
+	day_index <- grep("pineal_day", colnames(temp))
+	night_index <- grep("pineal_night", colnames(temp))
+	
+	lw_index <- temp[ , day_index] > 0.1 | temp[ , night_index] > 0.1
+	temp <- temp[lw_index, ]
+	# temp[temp[ , day_index] == 0, day_index] <- 0.00000001
+	# temp[temp[ , night_index] == 0, night_index] <- 0.00000001
+	temp$day_night_ratio <- temp[ , day_index]/temp[ , night_index]
+	temp$night_day_ratio <- temp[ , night_index]/temp[ , day_index]
+	
+	temp_photo_data <- data.frame(genename = temp$gene_name, day_value = temp[ , day_index], night_value = temp[ , night_index],
+																day_night_ratio = temp$day_night_ratio, night_day_ratio = temp$night_day_ratio, group = list_name)
+	bulk_photo_data <- rbind(bulk_photo_data, temp_photo_data)
+}
+
+bulk_photo_data <- bulk_photo_data[-1, ]
+
+final_photo_data <- rbind(bulk_photo_data, single_photo_data)
+final_photo_data <- final_photo_data[final_photo_data$day_value > 1 & final_photo_data$night_value > 1, ]
+
+write.xlsx(final_photo_data, "20230616_table_phototransduction_gene_related_to_day_night_change.xlsx", colNames = T, rowNames = T)
+
+
+topn_day <-  final_photo_data[final_photo_data$day_night_ratio > 1.5, ] %>%  group_by(group) %>% top_n(n = 5, wt = day_night_ratio)
+topn_night <-  final_photo_data[final_photo_data$night_day_ratio > 1.5, ] %>%  group_by(group) %>% top_n(n = 5, wt = night_day_ratio)
+
+plot_data <- data.frame(genename = c(topn_day$genename, topn_night$genename),
+												ratio = c(log2(topn_day$day_night_ratio + 1), -log2(topn_night$night_day_ratio + 1)),
+												group = c(topn_day$group, topn_night$group))
+
+plot_data$group <- factor(plot_data$group, levels = c("zebrafish_day_night",  "rat_makergene",
+																											 "rat_sc_allcells", "rat_sc_pinealocyte", "rat_sc_astrocyte","monkey"))
+
+# Plot
+p1 <- ggplot(plot_data, aes(x = group, y = ratio,  label = genename))
+p1 <- p1 + geom_point(alpha = 0.7, size = 4) 
+p1 <- p1 + geom_label_repel(aes(label = genename), nudge_y = 0.3, color = "black", min.segment.length = 0.1, size = 1.5, max.overlaps = Inf)
+p1 <- p1 + labs(x = "group", y = "log2(ratio + 1)") 
+p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+
+# 根据 ratio 来分配点的颜色
+p1 <- p1 + scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0)
+
+# Set y-axis limits and tick marks
+p1 <- p1 + ylim(-5, 5) + scale_y_continuous(breaks = seq(-5, 5, 2), limits = c(-5, 5))
+
+pdf("20230615_phototransduction_gene_related_to_day_night_change.pdf", height = 8, width = 8)
+p1
+dev.off()
+
+res <- list(final_photo_data = final_photo_data, top5_day = topn_day, top5_night = topn_night)
+write.xlsx(res, "20230616_table_phototransduction_gene_related_to_day_night_change.xlsx", colNames = T, rowNames = T)
+
+```
+
+## 补充画下肾上腺能受体的表达水平
+```{r}
+rm(list = ls())
+
+library(Seurat)
+library(scScape)
+library(clustree)
+
+setwd("/home/zhengjh/projects/PinealGland/analysis/PlotCatecholamineGPCR")
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+gpcr_list <- readRDS("/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds")
+
+z_ad_gpcr <- intersect(rownames(zebrafish), c(unique(gpcr_list$genename[ grep("adr", gpcr_list$genename)]), "drd4"))
+z_ad_gpcr <- sort(z_ad_gpcr)
+z_featureplot <- FeaturePlot(zebrafish, features = z_ad_gpcr, reduction = "tsne", pt.size = 0.7, repel = F, label = T,
+                             order = T, ncol = 5) 
+
+rat_ad_gpcr <- c("Adra1a","Adra1b","Adra1d","Adrb1","Adra2a", "Adra2c","Adrb2","Drd4")
+r_featureplot <- FeaturePlot(rat, features = rat_ad_gpcr, reduction = "tsne", pt.size = 0.7, repel = F, label = T,
+                             order = T, ncol = 5) 
+
+m_ad_gpcr <- intersect(rownames(monkey), c(unique(gpcr_list$genename[ grep("ADR", gpcr_list$genename)]), "DRD4"))
+m_ad_gpcr <- sort(m_ad_gpcr)
+m_featureplot <- FeaturePlot(monkey, features = m_ad_gpcr, reduction = "tsne", pt.size = 0.7, repel = F, label = T,
+                             order = T, ncol = 5) 
+
+plots <- plot_grid(z_featureplot, r_featureplot, m_featureplot, ncol = 1,align = "v", axis = "tb", rel_heights = c(1, 1, 0.5))
+
+pdf("20230607_PlotCatecholamineGPCR_three_species.pdf", width = 25, height = 20)
+plots
+dev.off()
+
+zz <- DotPlot(zebrafish, features = z_ad_gpcr) + coord_flip()
+zz$data$species <- "zebrafish"
+rr <- DotPlot(rat, features = rat_ad_gpcr) + coord_flip()
+rr$data$species <- "rat"
+mm <- DotPlot(monkey, features = m_ad_gpcr) + coord_flip()
+mm$data$species <- "monkey"
+
+final_data <- rbind(zz$data, rr$data, mm$data)
+write.csv(final_data, "20230607_PlotCatecholamineGPCR_three_species_pct_mean_exp.csv")
+
+```
+
+## 20230617 单细胞数据中 褪黑激素合成酶的表达分析
+```{r}
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure3_res/")
+
+library(Seurat)
+library(scScape)
+
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+# Plot violin plot and add percentage expression labels
+plot_violin_and_pct_exp <- function(seurat_obj, violin_features, dotplot_features, color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0) {
+  
+  # Create violin plot
+  plot_obj <- VlnPlot(seurat_obj, features = violin_features, stack = T, flip = T, fill.by = "ident", cols = color_palette, same.y.lims = T)
+  plot_obj <- plot_obj + geom_point(data = plot_obj$data, aes(x = ident, y = expression, fill = ident), 
+                                    position = position_jitterdodge(dodge.width = 0.75, jitter.width = 0.8), size = 0.4, color = "black")
+  
+  # Create dot plot and extract percentage expression data
+  pct_exp_data <- DotPlot(seurat_obj, features = dotplot_features)$data
+  colnames(pct_exp_data) <- c("avg.exp", "pct.exp", "features", "ident", "avg.exp.scaled")
+  
+  # Add labels to violin plot for each combination of ident and feature
+  for (i in unique(plot_obj$data$ident)) {
+    for (j in unique(plot_obj$data$feature)) {
+      label <- paste(round(pct_exp_data[pct_exp_data$features == j & pct_exp_data$ident == i, "pct.exp"], 2), "%")
+      text_data <- plot_obj$data[plot_obj$data$feature == j & plot_obj$data$ident == i, c("feature", "ident")]
+      text_data$label <- label
+      text_data <- text_data[!duplicated(text_data), ]
+      plot_obj <- plot_obj + geom_text(data = text_data, aes(x = ident, y = label_y_pos, label = label), size = label_size, vjust = label_vjust)
+    }
+  }
+  
+  # Return the violin plot object with percentage expression labels
+  return(plot_obj)
+}
+
+# Create color palette based on the number of active identities in the seurat object
+# n_ident <- length(unique(my_seurat_obj@active.ident))
+color_palette <-  c("#80B1D3", "#FDB462", "#89B00F", "#FB8072", "#BEBADA", "#FCCDE5", "#8DD3C7", "#FFED6F")
+
+# Plot violin plot and add percentage expression labels
+plot_zebrafish <- plot_violin_and_pct_exp(zebrafish, violin_features = c("tph1a", "tph1b", "tph2", "ddc", "aanat1", "aanat2", "asmt"), 
+                                        dotplot_features = c("tph1a", "tph1b", "tph2", "ddc", "aanat1", "aanat2", "asmt"),
+                                        color_palette = color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0)
+plot_zebrafish <- plot_zebrafish + NoLegend()
+pdf("20230617_zebrafish_melatonin_genes_vlnplot.pdf", width = 10, height = 10)
+plot_zebrafish
+dev.off()
+
+## rat 
+color_palette <-  c("#FDB462", "#80B1D3", "#FB8072", "#BEBADA", "#8DD3C7", "#FFED6F")
+
+plot_rat <- plot_violin_and_pct_exp(rat, violin_features = c("Tph1", "Tph2", "Ddc", "Aanat", "Asmt"), 
+                                        dotplot_features = c("Tph1", "Tph2", "Ddc", "Aanat", "Asmt"),
+                                        color_palette = color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0)
+plot_rat <- plot_rat + NoLegend()
+pdf("20230617_rat_melatonin_genes_vlnplot.pdf", width = 10, height = 10)
+plot_rat
+dev.off()
+
+## monkey
+color_palette <-  c("#80B1D3", "#FB8072", "#BEBADA", "#B3DE69", "#FCCDE5", "#FFED6F", "#FDB462", "#8DD3C7")
+# Warning messages:
+# The following requested variables were not found: ASMT ASMT 没有在这个数据中看到, 是用的reference的问题，不在组装的reference中
+
+plot_monkey <- plot_violin_and_pct_exp(monkey, violin_features = c("TPH1", "TPH2", "DDC", "AANAT"), 
+                                        dotplot_features = c("TPH1", "TPH2", "DDC", "AANAT"),
+                                        color_palette = color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0)
+plot_monkey <- plot_monkey + NoLegend()
+pdf("20230617_monkey_melatonin_genes_vlnplot.pdf", width = 10, height = 10)
+plot_monkey
+dev.off()
+
+
+## 补充下大鼠白天和夜晚的五个褪黑激素合成酶合在一起的小提琴图
+rat_all <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_all_day_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+rat_all$orig.ident <- gsub("GSM3188347_Pineal_Gland_Night_1", "Night", rat_all$orig.ident)
+rat_all$orig.ident <- gsub("GSM3188349_Pineal_Gland_Night_2", "Night", rat_all$orig.ident)
+rat_all$orig.ident <- gsub("GSM3188343_Pineal_Gland_Day_1", "Day", rat_all$orig.ident)
+rat_all$orig.ident <- gsub("GSM3188345_Pineal_Gland_Day_2", "Day", rat_all$orig.ident)
+
+rat_all$celltype_assign <- paste(rat_all$orig.ident, as.character(rat_all@active.ident), sep = "_")
+levels_define <- c("Day_α-pinealocyte", "Night_α-pinealocyte", "Day_β-pinealocyte", "Night_β-pinealocyte",
+									 "Day_Astrocyte",  "Night_Astrocyte", "Day_Microglia", "Night_Microglia", 
+									 "Day_VLMCs", "Night_VLMCs", "Day_Endothelial","Night_Endothelial")
+rat_all$celltype_assign <- factor(rat_all$celltype_assign, levels = levels_define)
+rat_all@active.ident <- rat_all$celltype_assign
+
+color_palette <-  c("#FDB462", "#FDB462", "#80B1D3", "#80B1D3", "#FB8072",  "#FB8072", "#BEBADA", "#BEBADA", "#8DD3C7", "#8DD3C7", "#FFED6F", "#FFED6F")
+
+plot_rat <- plot_violin_and_pct_exp(rat_all, violin_features = c("Tph1", "Tph2", "Ddc", "Aanat", "Asmt"), 
+                                        dotplot_features = c("Tph1", "Tph2", "Ddc", "Aanat", "Asmt"),
+                                        color_palette = color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0)
+plot_rat <- plot_rat + NoLegend()
+pdf("20230617_rat_day_night_melatonin_genes_vlnplot.pdf", width = 10, height = 10)
+plot_rat
+dev.off()
+
+```
+
+## 20230708 单细胞数据中褪黑激素合成酶的表达分析 按细胞分类 去掉不需要的细胞类型
+```{r}
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res//")
+
+library(Seurat)
+library(scScape)
+
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+zebrafish <- subset(zebrafish, idents = c("Cone-like photoreceptors", "Rod-like photoreceptors",
+																					"Retinal pigment epithelium-like", "Muller glia-like"))
+rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+monkey <- subset(monkey, idents = c("Pinealocyte", "Astrocyte"))
+# $celltype_assign <- gsub("Cone-like photoreceptors|Rod-like photoreceptors", "Photoreceptors", zebrafish$celltype_assign)
+# zebrafish$celltype_assign <- gsub("Retinal pigment epithelium-like", "RPE-like", zebrafish$celltype_assign)
+# zebrafish@active.ident <- factor(zebrafish$celltype_assign, levels = c("Photoreceptors", "RPE-like", "Muller glia-like"))
+
+# rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+# rat$celltype_assign <- gsub("α-pinealocyte|β-pinealocyte", "Pinealocyte", rat$celltype_assign)
+# rat@active.ident <- factor(rat$celltype_assign, levels = c("Pinealocyte", "Astrocyte"))
+
+# Plot violin plot and add percentage expression labels
+plot_violin_and_pct_exp <- function(seurat_obj, violin_features, dotplot_features, color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0) {
+  
+  # Create violin plot
+  plot_obj <- VlnPlot(seurat_obj, features = violin_features, stack = T, flip = T, fill.by = "ident", cols = color_palette, same.y.lims = T)
+  plot_obj <- plot_obj + geom_point(data = plot_obj$data, aes(x = ident, y = expression, fill = ident), 
+                                    position = position_jitterdodge(dodge.width = 0.75, jitter.width = 0.8), size = 0.4, color = "black")
+  
+  # Create dot plot and extract percentage expression data
+  pct_exp_data <- DotPlot(seurat_obj, features = dotplot_features)$data
+  colnames(pct_exp_data) <- c("avg.exp", "pct.exp", "features", "ident", "avg.exp.scaled")
+  
+  # Add labels to violin plot for each combination of ident and feature
+  for (i in unique(plot_obj$data$ident)) {
+    for (j in unique(plot_obj$data$feature)) {
+      label <- paste(round(pct_exp_data[pct_exp_data$features == j & pct_exp_data$ident == i, "pct.exp"], 2), "%")
+      text_data <- plot_obj$data[plot_obj$data$feature == j & plot_obj$data$ident == i, c("feature", "ident")]
+      text_data$label <- label
+      text_data <- text_data[!duplicated(text_data), ]
+      plot_obj <- plot_obj + geom_text(data = text_data, aes(x = ident, y = label_y_pos, label = label), size = label_size, vjust = label_vjust)
+    }
+  }
+  
+  # Return the violin plot object with percentage expression labels
+  return(plot_obj)
+}
+
+# Create color palette based on the number of active identities in the seurat object
+# n_ident <- length(unique(my_seurat_obj@active.ident))
+color_palette <-  c("#80B1D3", "#FDB462", "#89B00F", "#FB8072")
+
+# Plot violin plot and add percentage expression labels
+plot_zebrafish <- plot_violin_and_pct_exp(zebrafish, violin_features = c("tph1a", "tph1b", "tph2", "ddc", "aanat1", "aanat2", "asmt"), 
+                                        dotplot_features = c("tph1a", "tph1b", "tph2", "ddc", "aanat1", "aanat2", "asmt"),
+                                        color_palette = color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0)
+plot_zebrafish <- plot_zebrafish + NoLegend()
+
+## rat 
+color_palette <-  c("#FDB462", "#80B1D3", "#FB8072")
+plot_rat <- plot_violin_and_pct_exp(rat, violin_features = c("Tph1", "Tph2", "Ddc", "Aanat", "Asmt"), 
+                                        dotplot_features = c("Tph1", "Tph2", "Ddc", "Aanat", "Asmt"),
+                                        color_palette = color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0)
+plot_rat <- plot_rat + NoLegend()
+## monkey
+color_palette <-  c("#80B1D3", "#FB8072")
+# Warning messages:
+# The following requested variables were not found: ASMT ASMT 没有在这个数据中看到, 是用的reference的问题，不在组装的reference中
+
+plot_monkey <- plot_violin_and_pct_exp(monkey, violin_features = c("TPH1", "TPH2", "DDC", "AANAT"), 
+                                        dotplot_features = c("TPH1", "TPH2", "DDC", "AANAT"),
+                                        color_palette = color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0)
+plot_monkey <- plot_monkey + NoLegend()
+
+plots <- plot_grid(plot_zebrafish, plot_rat, plot_monkey, ncol = 3,
+									 rel_widths = c(1, 0.9, 0.8), rel_heights = c(1.5, 1, 1))
+
+pdf("20230709_three_species_melatonin_gene_violinplot.pdf", width = 10, height = 9)
+plots
+dev.off()
+
+## rat night 
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res//")
+
+library(Seurat)
+library(scScape)
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+
+rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+
+# Plot violin plot and add percentage expression labels
+plot_violin_and_pct_exp <- function(seurat_obj, violin_features, dotplot_features, color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0) {
+  
+  # Create violin plot
+  plot_obj <- VlnPlot(seurat_obj, features = violin_features, stack = T, flip = T, fill.by = "ident", cols = color_palette, same.y.lims = T)
+  plot_obj <- plot_obj + geom_point(data = plot_obj$data, aes(x = ident, y = expression, fill = ident), 
+                                    position = position_jitterdodge(dodge.width = 0.75, jitter.width = 0.8), size = 0.4, color = "black")
+  
+  # Create dot plot and extract percentage expression data
+  pct_exp_data <- DotPlot(seurat_obj, features = dotplot_features)$data
+  colnames(pct_exp_data) <- c("avg.exp", "pct.exp", "features", "ident", "avg.exp.scaled")
+  
+  # Add labels to violin plot for each combination of ident and feature
+  for (i in unique(plot_obj$data$ident)) {
+    for (j in unique(plot_obj$data$feature)) {
+      label <- paste(round(pct_exp_data[pct_exp_data$features == j & pct_exp_data$ident == i, "pct.exp"], 2), "%")
+      text_data <- plot_obj$data[plot_obj$data$feature == j & plot_obj$data$ident == i, c("feature", "ident")]
+      text_data$label <- label
+      text_data <- text_data[!duplicated(text_data), ]
+      plot_obj <- plot_obj + geom_text(data = text_data, aes(x = ident, y = label_y_pos, label = label), size = label_size, vjust = label_vjust)
+    }
+  }
+  
+  # Return the violin plot object with percentage expression labels
+  return(plot_obj)
+}
+
+
+color_palette <-  c("#FDB462", "#80B1D3", "#FB8072")
+plot_rat <- plot_violin_and_pct_exp(rat, violin_features = c("Tph1", "Tph2", "Ddc", "Aanat", "Asmt"), 
+                                        dotplot_features = c("Tph1", "Tph2", "Ddc", "Aanat", "Asmt"),
+                                        color_palette = color_palette, label_y_pos = 4, label_size = 3, label_vjust = 0)
+plot_rat <- plot_rat + NoLegend()
+
+pdf("20230709_rat_night_melatonin_gene_violinplot.pdf", width = 8, height = 9)
+plot_rat
+dev.off()
+
+```
+
+## 20230617 看下褪黑激素合成酶和昼夜节律调控基因在bulk RNA-seq中的表达水平
+```{r melatonin sythesis related genes}
+
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res")
+
+## 在各自物种的表达, 没有用整合的数据
+interested_gene <- read.xlsx("PhotoMelatoninClockGenesets.xlsx")
+interested_gene <- interested_gene[interested_gene$Group %in% c("CircadianRhythmnRegulation", "MelatoninSynthesis"), ]
+
+### bulk RNA-seq 数据
+bulk_files <- "20230614_used_pineal_gland_totalRNAseq.xlsx"
+
+bulk_data <- list()
+for (i in getSheetNames(bulk_files)){
+	bulk_data[[i]] <- read.xlsx(bulk_files, sheet = i)
+}
+
+bulk_mela_data <- data.frame(genename = "1", day_value = 0, night_value = 0,  group = "1")
+map_name <- c("ZebrafishGenename",  "RatGenename", "MonkeyGenename")
+for (i in 1:length(bulk_data)) {
+	list_name <- names(bulk_data)[i]
+	index <- bulk_data[[list_name]]$gene_name %in% interested_gene[, map_name[i]]
+	temp <- bulk_data[[list_name]][index, ]
+	day_index <- grep("pineal_day", colnames(temp))
+	night_index <- grep("pineal_night", colnames(temp))
+	
+	temp_mela_data <- data.frame(genename = temp$gene_name, day_value = temp[ , day_index], night_value = temp[ , night_index], group = list_name)
+	bulk_mela_data <- rbind(bulk_mela_data, temp_mela_data)
+}
+
+bulk_mela_data <- bulk_mela_data[-1, ]
+
+### 绘制热图
+
+### 绘制热图
+# zebrafish
+index <- which(bulk_mela_data$group == "zebrafish_day_night")
+plot_data <- log(bulk_mela_data[index, c("day_value", "night_value")] + 0.0001)
+rownames(plot_data) <- bulk_mela_data$genename[index]
+plot_data <- plot_data[intersect(interested_gene$ZebrafishGenename, bulk_mela_data$genename[index]), ]
+p_zebrafish <- pheatmap::pheatmap(plot_data, cluster_rows = F, cluster_cols = F, scale = "none", breaks = c(seq(-2, 10, length.out = 101)))
+p_zebrafish <- as.ggplot(p_zebrafish)
+# rat
+index <- which(bulk_mela_data$group == "rat_makergene")
+plot_data <- log(bulk_mela_data[index, c("day_value", "night_value")] + 0.0001)
+rownames(plot_data) <- bulk_mela_data$genename[index]
+plot_data <- plot_data[intersect(interested_gene$RatGenename, bulk_mela_data$genename[index]), ]
+p_rat <- pheatmap::pheatmap(plot_data, cluster_rows = F, cluster_cols = F, scale = "none", breaks = c(seq(-2, 10, length.out = 101)))
+p_rat <- as.ggplot(p_rat)
+# monkey
+index <- which(bulk_mela_data$group == "monkey")
+plot_data <- log(bulk_mela_data[index, c("day_value", "night_value")] + 0.0001)
+rownames(plot_data) <- bulk_mela_data$genename[index]
+plot_data <- plot_data[intersect(interested_gene$MonkeyGenename, bulk_mela_data$genename[index]), ]
+p_monkey <- pheatmap::pheatmap(plot_data, cluster_rows = F, cluster_cols = F, scale = "none", breaks = c(seq(-2, 10, length.out = 101)))
+p_monkey <- as.ggplot(p_monkey)
+
+pdf("20230624_three_species_melatonin_circadian_pheatmap.pdf", width = 12, height = 12)
+p_zebrafish + p_rat + p_monkey
+dev.off()
+
+# 还是看下day night ratio
+bulk_mela_data <- data.frame(genename = "1", day_value = 0, night_value = 0, day_night_ratio = 0, night_day_ratio = 0, group = "1")
+map_name <- c("ZebrafishGenename",  "RatGenename", "MonkeyGenename")
+for (i in 1:length(bulk_data)) {
+	list_name <- names(bulk_data)[i]
+	index <- bulk_data[[list_name]]$gene_name %in% melatonin_gene[, map_name[i]]
+	temp <- bulk_data[[list_name]][index, ]
+	day_index <- grep("pineal_day", colnames(temp))
+	night_index <- grep("pineal_night", colnames(temp))
+	
+	lw_index <- temp[ , day_index] > 0.05 | temp[ , night_index] > 0.05
+	temp <- temp[lw_index, ]
+	# temp[temp[ , day_index] == 0, day_index] <- 0.00000001
+	# temp[temp[ , night_index] == 0, night_index] <- 0.00000001
+	temp$day_night_ratio <- (temp[ , day_index] + 0.00001)/(temp[ , night_index] + 1)
+	temp$night_day_ratio <- (temp[ , night_index] + 0.00001)/(temp[ , day_index] + 1)
+	
+	temp_mela_data <- data.frame(genename = temp$gene_name, day_value = temp[ , day_index], night_value = temp[ , night_index],
+																day_night_ratio = temp$day_night_ratio, night_day_ratio = temp$night_day_ratio, group = list_name)
+	bulk_mela_data <- rbind(bulk_mela_data, temp_mela_data)
+}
+
+bulk_mela_data <- bulk_mela_data[-1, ]
+top10_day <-  bulk_mela_data[bulk_mela_data$day_night_ratio > 1.5, ] %>%  group_by(group) %>% top_n(n = 5, wt = day_night_ratio)
+top10_night <-  bulk_mela_data[bulk_mela_data$night_day_ratio > 1.5, ] %>%  group_by(group) %>% top_n(n = 5, wt = night_day_ratio)
+top10_night$night_day_ratio <- -top10_night$night_day_ratio
+plot_data <- data.frame(genename = c(top10_day$genename, top10_night$genename),
+												ratio = c(top10_day$day_night_ratio, top10_night$night_day_ratio),
+												group = c(top10_day$group, top10_night$group))
+
+plot_data$group <- factor(plot_data$group, levels = c("zebrafish_day_night", "rat_makergene", "monkey"))
+
+# Plot
+p1 <- ggplot(plot_data, aes(x = group, y = ratio,  label = genename))
+p1 <- p1 + geom_point(alpha = 0.7) 
+p1 <- p1 + geom_label_repel(aes(label = genename), nudge_y = 0.3, color = "black", min.segment.length = 0.1, size = 1.5, max.overlaps = Inf)
+p1 <- p1 + labs(x = "group", y = "ratio") 
+p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+
+# 根据 ratio 来分配点的颜色
+p1 <- p1 + scale_color_gradient2(low = "blue", mid = "white", high = "red", midpoint = 0)
+
+# Set y-axis limits and tick marks
+p1 <- p1 + ylim(20, -10) + scale_y_continuous(breaks = seq(-10, 20, 5), limits = c(-10, 20))
+
+pdf("20230615_phototransduction_gene_related_to_day_night_change.pdf", height = 8, width = 8)
+p1
+dev.off()
+
+res <- list(final_photo_data = final_photo_data, top10_day = top10_day, top10_night = top10_night)
+write.xlsx(res, "20230616_table_phototransduction_gene_related_to_day_night_change.xlsx", colNames = T, rowNames = T)
+
+
+
+### 绘制热图
+# zebrafish
+plot_data <- log(bulk_mela_data[1:7, c("day_value", "night_value")] + 0.0001)
+rownames(plot_data) <- bulk_mela_data$genename[1:7]
+p_zebrafish <- pheatmap::pheatmap(plot_data, cluster_rows = F, cluster_cols = F, scale = "none", breaks = c(seq(-2, 10, length.out = 101)))
+p_zebrafish <- as.ggplot(p_zebrafish)
+# rat
+plot_data <- log(bulk_mela_data[8:12, c("day_value", "night_value")] + 0.0001)
+rownames(plot_data) <- bulk_mela_data$genename[8:12]
+p_rat <- pheatmap::pheatmap(plot_data, cluster_rows = F, cluster_cols = F, scale = "none", breaks = c(seq(-2, 10, length.out = 101)))
+p_rat <- as.ggplot(p_rat)
+# monkey
+plot_data <- log(bulk_mela_data[13:17, c("day_value", "night_value")] + 0.0001)
+rownames(plot_data) <- bulk_mela_data$genename[13:17]
+p_monkey <- pheatmap::pheatmap(plot_data, cluster_rows = F, cluster_cols = F, scale = "none", breaks = c(seq(-2, 10, length.out = 101)))
+p_monkey <- as.ggplot(p_monkey)
+
+pdf("20230617_three_species_melatonin_pheatmap.pdf", width = 12, height = 6)
+p_zebrafish + p_rat + p_monkey
+dev.off()
+
+```
+
+
+## 20230618 看下昼夜节律调控基因在单细胞数据中的表达情况
+```{r}
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/")
+
+## 在各自物种的表达, 没有用整合的数据
+used_gene <- read.xlsx("CircadianRhythmnRgualation.xlsx")
+
+celltype_color <- list(zebrafish = c("#80B1D3", "#FDB462", "#89B00F", "#FB8072", "#BEBADA", "#FCCDE5", "#8DD3C7", "#FFED6F"),
+														 rat =  c("#FDB462", "#80B1D3", "#FB8072", "#BEBADA", "#8DD3C7", "#FFED6F"),
+														 monkey =  c("#80B1D3", "#FB8072", "#BEBADA", "#B3DE69", "#FCCDE5", "#FFED6F", "#FDB462", "#8DD3C7"))
+
+library(ggplot2)
+library(ggrepel)
+library(scales)
+gene_plot <- function(seurat_object, interestgenes, node_color){
+  
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+
+  # Plot
+  p1 <- ggplot(gene_avg_info, aes(x = celltype, y = log2(avg.exp), size = pct.exp, label = genename, color = celltype))
+  p1 <- p1 + geom_point(alpha = 0.7) 
+  p1 <- p1 + geom_label_repel(aes(label = genename), nudge_y = 0.3, color = "black", min.segment.length = 0.1, size = 1, max.overlaps = Inf) 
+  p1 <- p1 + scale_color_manual(values = node_color)
+  p1 <- p1 + labs(x = "celltype", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+  p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+  p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+  
+  p1 <- p1 + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  # Set y-axis limits and tick marks
+  p1 <- p1 + ylim(-4, 4) + scale_y_continuous(breaks = seq(-4, 4, 1), limits = c(-4, 4))
+  # Set size limits and tick marks
+  p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+  return(p1)
+  
+}
+
+## zebrafish
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+expressed_genes <- rownames(zebrafish)[rownames(zebrafish) %in% used_gene$ZebrafishGenename]
+table(zebrafish@active.ident)
+
+p_zebrafish <- gene_plot(seurat_object = zebrafish, interestgenes = expressed_genes, node_color = celltype_color$zebrafish)
+
+pdf("20230619_zebrafish_dotplot_circadiangene.pdf", width = 16, height = 10)
+p_zebrafish
+dev.off()
+
+### rat
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+table(rat@active.ident)
+p_rat <- gene_plot(seurat_object = rat, interestgenes = expressed_genes, node_color = celltype_color$rat)
+
+pdf("20230619_rat_dotplot_circadiangene.pdf", width = 18, height = 10)
+p_rat
+dev.off()
+
+### monkey
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+expressed_genes <- rownames(monkey)[rownames(monkey) %in% unique(used_gene$MonkeyGenename)]
+table(monkey@active.ident)
+p_monkey <- gene_plot(seurat_object = monkey, interestgenes = expressed_genes, node_color = celltype_color$monkey)
+pdf("20230619_monkey_dotplot_circadiangene.pdf", width = 18, height = 10)
+p_monkey
+dev.off()
+
+p_combined <- plot_grid(p_zebrafish + NoLegend(), p_rat + NoLegend(), p_monkey + NoLegend(), ncol = 3, align = "hv")
+
+pdf("20230625_three_species_combined_circadiangene.pdf", width = 23, height = 8)
+p_combined
+dev.off()
+
+
+p_zebrafish$data$group <- "zebrafish"
+p_rat$data$group <- "rat_day"
+p_rat_night$data$group <- "rat_night"
+p_monkey$data$group <- "monkey"
+
+circadiangene_exp <- rbind(p_zebrafish$data, p_rat$data, p_rat_night$data, p_monkey$data)
+write.csv(circadiangene_exp, "20230619_three_species_circadiangene_dotplot_exp.csv")
+
+# rat night 的数据
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+library(ggplot2)
+library(ggrepel)
+library(scales)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/")
+used_gene <- read.xlsx("CircadianRhythmnRgualation.xlsx")
+
+## 在各自物种的表达, 没有用整合的数据
+used_gene <- read.xlsx("CircadianRhythmnRgualation.xlsx")
+celltype_color <- c("#FDB462", "#80B1D3", "#FB8072", "#BEBADA", "#8DD3C7", "#FFED6F")
+gene_plot <- function(seurat_object, interestgenes, node_color){
+  
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+
+  # Plot
+  p1 <- ggplot(gene_avg_info, aes(x = celltype, y = log2(avg.exp), size = pct.exp, label = genename, color = celltype))
+  p1 <- p1 + geom_point(alpha = 0.7) 
+  p1 <- p1 + geom_label_repel(aes(label = genename), nudge_y = 0.3, color = "black", min.segment.length = 0.1, size = 1, max.overlaps = Inf) 
+  p1 <- p1 + scale_color_manual(values = node_color)
+  p1 <- p1 + labs(x = "celltype", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+  p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+  p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+  
+  p1 <- p1 + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  # Set y-axis limits and tick marks
+  p1 <- p1 + ylim(-4, 4) + scale_y_continuous(breaks = seq(-4, 4, 1), limits = c(-4, 4))
+  # Set size limits and tick marks
+  p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+  return(p1)
+  
+}
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_all_day_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+rat <- subset(rat, orig.ident %in% c("GSM3188347_Pineal_Gland_Night_1", "GSM3188349_Pineal_Gland_Night_2"))
+rat$celltype_assign <- factor(as.character(rat@active.ident),
+													 levels = c("α-pinealocyte", "β-pinealocyte", "Astrocyte", "Microglia", "VLMCs", "Endothelial"))
+
+rat@active.ident <- rat$celltype_assign
+
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+table(rat@active.ident)
+p_rat_night <- gene_plot(seurat_object = rat, interestgenes = expressed_genes, node_color = celltype_color)
+
+pdf("20230626_rat_night_circadiangene.pdf", width = 10, height = 7)
+p_rat_night
+dev.off()
+
+
+```
+
+## 20230709 看下昼夜节律调控基因在单细胞数据中的表达情况，同一物种，不同细胞，仅仅关注我们想关注的细胞
+```{r}
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/")
+
+## 在各自物种的表达, 没有用整合的数据
+used_gene <- read.xlsx("CircadianRhythmnRgualation.xlsx")
+
+celltype_color <- list(zebrafish = c("#80B1D3", "#FDB462", "#89B00F", "#FB8072"),
+														 rat =  c("#FDB462", "#80B1D3", "#FB8072"),
+														 monkey =  c("#80B1D3", "#FB8072"))
+
+library(ggplot2)
+library(ggrepel)
+library(scales)
+gene_plot <- function(seurat_object, interestgenes, node_color, pct.exp.thr, avg.exp.thr, y_lim, y_lim_step){
+  
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > pct.exp.thr, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > avg.exp.thr, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+
+  # Plot
+  p1 <- ggplot(gene_avg_info, aes(x = celltype, y = log2(avg.exp), size = pct.exp, label = genename, color = celltype))
+  p1 <- p1 + geom_point(alpha = 0.7) 
+  p1 <- p1 + geom_label_repel(aes(label = genename), nudge_y = 0.3, color = "black", min.segment.length = 0.1, size = 1, max.overlaps = Inf) 
+  p1 <- p1 + scale_color_manual(values = node_color)
+  p1 <- p1 + labs(x = "celltype", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+  p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+  p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+  
+  p1 <- p1 + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  # Set y-axis limits and tick marks
+  p1 <- p1 + ylim(0, y_lim) + scale_y_continuous(breaks = seq(0, y_lim, y_lim_step), limits = c(0, y_lim))
+  # Set size limits and tick marks
+  p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+  return(p1)
+  
+}
+
+## zebrafish
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+zebrafish <- subset(zebrafish, idents = c("Rod-like photoreceptors", "Cone-like photoreceptors", 
+																					"Retinal pigment epithelium-like", "Muller glia-like"))
+expressed_genes <- rownames(zebrafish)[rownames(zebrafish) %in% used_gene$ZebrafishGenename]
+table(zebrafish@active.ident)
+
+p_zebrafish <- gene_plot(seurat_object = zebrafish, interestgenes = expressed_genes, node_color = celltype_color$zebrafish,
+												 pct.exp.thr = 0.1, avg.exp.thr = 1, y_lim = 4, y_lim_step = 1)
+p_zebrafish <- p_zebrafish + NoLegend()
+
+### rat
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+table(rat@active.ident)
+p_rat <- gene_plot(seurat_object = rat, interestgenes = expressed_genes, node_color = celltype_color$rat,
+									 pct.exp.thr = 0.1, avg.exp.thr = 1, y_lim = 4, y_lim_step = 1)
+p_rat <- p_rat + NoLegend()
+
+### monkey
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+expressed_genes <- rownames(monkey)[rownames(monkey) %in% unique(used_gene$MonkeyGenename)]
+monkey <- subset(monkey, idents = c("Pinealocyte", "Astrocyte"))
+table(monkey@active.ident)
+
+p_monkey <- gene_plot(seurat_object = monkey, interestgenes = expressed_genes, node_color = celltype_color$monkey,
+											pct.exp.thr = 0.1, avg.exp.thr = 1, y_lim = 4, y_lim_step = 1)
+
+p_combined <- plot_grid(p_zebrafish, p_rat, p_monkey, ncol = 3, align = "hv", axis = "lr")
+
+pdf("20230709_three_species_combined_circadiangene_dotplot.pdf", width = 16, height = 10)
+p_combined
+dev.off()
+
+p_zebrafish$data$group <- "zebrafish"
+p_rat$data$group <- "rat_day"
+p_monkey$data$group <- "monkey"
+
+circadiangene_exp <- rbind(p_zebrafish$data, p_rat$data, p_monkey$data)
+write.csv(circadiangene_exp, "20230709_three_species_circadiangene_dotplot_exp.csv")
+
+# rat night 的数据
+rm(list = ls())
+library(Seurat)
+library(openxlsx)
+library(ggplot2)
+library(ggrepel)
+library(scales)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/")
+used_gene <- read.xlsx("CircadianRhythmnRgualation.xlsx")
+
+## 在各自物种的表达, 没有用整合的数据
+celltype_color <- c("#FDB462", "#80B1D3", "#FB8072")
+gene_plot <- function(seurat_object, interestgenes, node_color, pct.exp.thr, avg.exp.thr, y_lim, y_lim_step){
+  
+  gene_avg_info <- DotPlot(seurat_object, features = interestgenes)$data
+  # Filter data
+  gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > pct.exp.thr, ]
+  gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > avg.exp.thr, ]
+  colnames(gene_avg_info) <- c("avg.exp", "pct.exp", "genename", "celltype", "avg.exp.scaled")
+
+  # Plot
+  p1 <- ggplot(gene_avg_info, aes(x = celltype, y = log2(avg.exp), size = pct.exp, label = genename, color = celltype))
+  p1 <- p1 + geom_point(alpha = 0.7) 
+  p1 <- p1 + geom_text_repel(aes(label = genename), nudge_y = 0.3, color = "black",min.segment.length = 0.1, size = 2.5, max.overlaps = Inf)
+  p1 <- p1 + scale_color_manual(values = node_color)
+  p1 <- p1 + labs(x = "celltype", y = "log2 Average Expression Level", size = "Proportion of Cells Expressed") 
+  p1 <- p1 + theme(panel.border = element_rect(color = "black", fill = NA), panel.background = element_rect(fill = "white"))
+  p1 <- p1 + theme(panel.grid.major = element_line(color = "grey"), panel.grid.minor = element_line(color = "grey"))
+  
+  p1 <- p1 + theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  # Set y-axis limits and tick marks
+  p1 <- p1 + ylim(0, y_lim) + scale_y_continuous(breaks = seq(0, y_lim, y_lim_step), limits = c(0, y_lim))
+  # Set size limits and tick marks
+  p1 <- p1 + scale_size_continuous(breaks = c(5, 25, 50, 75, 100), limits = c(0.01, 100))
+  return(p1)
+}
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_all_day_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+rat <- subset(rat, orig.ident %in% c("GSM3188347_Pineal_Gland_Night_1", "GSM3188349_Pineal_Gland_Night_2"))
+rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+rat$celltype_assign <- factor(as.character(rat@active.ident),
+													 levels = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+
+rat@active.ident <- rat$celltype_assign
+expressed_genes <- rownames(rat)[rownames(rat) %in% unique(used_gene$RatGenename)]
+table(rat@active.ident)
+p_rat_night <- gene_plot(seurat_object = rat, interestgenes = expressed_genes, node_color = celltype_color,
+												 pct.exp.thr = 0.1, avg.exp.thr = 1, y_lim = 4, y_lim_step = 1)
+
+pdf("20230709_rat_night_circadiangene.pdf", width = 8, height = 7)
+p_rat_night
+dev.off()
+
+write.csv(p_rat_night$data, "20230709_rat_night_circadiangene_dotplot_exp.csv")
+```
+
+## 20230619 形成褪黑激素合成相关基因, 光转导基因以及昼夜节律调控基因的互作网络的表格
+```{r generate GCN}
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res")
+
+library(scScape)
+library(Seurat)
+used_gene <- read.xlsx("PhotoMelatoninClockGenesets.xlsx")
+
+## zebrafish
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+table(zebrafish@active.ident)
+
+targets_geneset <- unique(as.character(used_gene$ZebrafishGenename))
+
+gene_avg_info <- DotPlot(zebrafish, features = targets_geneset)$data
+setdiff(targets_geneset, rownames(zebrafish))
+
+# Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+
+targets_geneset <- unique(as.character(gene_avg_info$features.plot))
+
+## rod cone 分开找gcn 
+zebrafish <- subset(zebrafish, idents = c("Rod-like photoreceptors", "Cone-like photoreceptors", "Retinal pigment epithelium-like", "Muller glia-like"))
+zebrafish_gcn <- scScape::GenerateGCN(object = zebrafish, targets_geneset = targets_geneset)
+zebrafish_gcn$gcn_gene <- targets_geneset
+
+## rod 和 cone合在一起
+zebrafish <- subset(zebrafish, idents =  c("Rod-like photoreceptors", "Cone-like photoreceptors"))
+zebrafish$celltype_assign <- gsub("Rod-like photoreceptors", "photoreceptors", zebrafish$celltype_assign)
+zebrafish$celltype_assign <- gsub("Cone-like photoreceptors", "photoreceptors", zebrafish$celltype_assign)
+zebrafish$celltype_assign <- factor(zebrafish$celltype_assign)
+zebrafish@active.ident <- zebrafish$celltype_assign
+
+zebrafish_photo <- scScape::GenerateGCN(object = zebrafish, targets_geneset = targets_geneset)
+zebrafish_gcn$GENIE3_unfilter_res <- rbind(zebrafish_gcn$GENIE3_unfilter_res, zebrafish_photo$GENIE3_unfilter_res)
+zebrafish_gcn$sclink_unfilter_res <- rbind(zebrafish_gcn$sclink_unfilter_res, zebrafish_photo$sclink_unfilter_res)
+zebrafish_gcn$predict_link_cutoff <- rbind(zebrafish_gcn$predict_link_cutoff, zebrafish_photo$predict_link_cutoff)
+
+write.xlsx(zebrafish_gcn, "20230619_zebrafish_photo_melatonin_circadian_gcn.xlsx", colNames = T, rowNames = T)
+
+## rat
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res")
+
+library(scScape)
+library(Seurat)
+used_gene <- read.xlsx("PhotoMelatoninClockGenesets.xlsx")
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+table(rat@active.ident)
+
+targets_geneset <- unique(as.character(used_gene$RatGenename))
+
+gene_avg_info <- DotPlot(rat, features = targets_geneset)$data
+setdiff(targets_geneset, rownames(rat))
+
+# Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+
+targets_geneset <- unique(as.character(gene_avg_info$features.plot))
+
+## α-pinealocyte β-pinealocyte 分开找gcn 
+rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+rat_gcn <- scScape::GenerateGCN(object = rat, targets_geneset = targets_geneset)
+rat_gcn$gcn_gene <- targets_geneset
+
+## α-pinealocyte 和 β-pinealocyte合在一起
+rat <- subset(rat, idents =  c("α-pinealocyte", "β-pinealocyte"))
+rat$celltype_assign <- gsub("α-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- gsub("β-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- factor(rat$celltype_assign)
+rat@active.ident <- rat$celltype_assign
+rat_pineal <- scScape::GenerateGCN(object = rat, targets_geneset = targets_geneset)
+
+rat_gcn$GENIE3_unfilter_res <- rbind(rat_gcn$GENIE3_unfilter_res, rat_pineal$GENIE3_unfilter_res)
+rat_gcn$sclink_unfilter_res <- rbind(rat_gcn$sclink_unfilter_res, rat_pineal$sclink_unfilter_res)
+rat_gcn$predict_link_cutoff <- rbind(rat_gcn$predict_link_cutoff, rat_pineal$predict_link_cutoff)
+
+write.xlsx(rat_gcn, "20230619_rat_photo_melatonin_circadian_gcn.xlsx", colNames = T, rowNames = T)
+
+## monkey
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res")
+
+library(scScape)
+library(Seurat)
+used_gene <- read.xlsx("PhotoMelatoninClockGenesets.xlsx")
+
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+table(monkey@active.ident)
+
+targets_geneset <- unique(as.character(used_gene$MonkeyGenename))
+
+gene_avg_info <- DotPlot(monkey, features = targets_geneset)$data
+setdiff(targets_geneset, rownames(monkey))
+
+# Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+
+targets_geneset <- unique(as.character(gene_avg_info$features.plot))
+
+monkey <- subset(monkey, idents = c("Pinealocyte", "Astrocyte"))
+monkey_gcn <- scScape::GenerateGCN(object = monkey, targets_geneset = targets_geneset)
+monkey_gcn$gcn_gene <- targets_geneset
+
+write.xlsx(monkey_gcn, "20230619_monkey_photo_melatonin_circadian_gcn.xlsx", colNames = T, rowNames = T)
+
+
+## rat night的数据
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res")
+
+library(scScape)
+library(Seurat)
+used_gene <- read.xlsx("PhotoMelatoninClockGenesets.xlsx")
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+table(rat@active.ident)
+
+targets_geneset <- unique(as.character(used_gene$RatGenename))
+
+gene_avg_info <- DotPlot(rat, features = targets_geneset)$data
+setdiff(targets_geneset, rownames(rat))
+
+# Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+
+targets_geneset <- unique(as.character(gene_avg_info$features.plot))
+
+## α-pinealocyte β-pinealocyte 分开找gcn 
+rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+rat_gcn <- scScape::GenerateGCN(object = rat, targets_geneset = targets_geneset)
+rat_gcn$gcn_gene <- targets_geneset
+
+## α-pinealocyte 和 β-pinealocyte合在一起
+rat <- subset(rat, idents =  c("α-pinealocyte", "β-pinealocyte"))
+rat$celltype_assign <- gsub("α-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- gsub("β-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- factor(rat$celltype_assign)
+rat@active.ident <- rat$celltype_assign
+rat_pineal <- scScape::GenerateGCN(object = rat, targets_geneset = targets_geneset)
+
+rat_gcn$GENIE3_unfilter_res <- rbind(rat_gcn$GENIE3_unfilter_res, rat_pineal$GENIE3_unfilter_res)
+rat_gcn$sclink_unfilter_res <- rbind(rat_gcn$sclink_unfilter_res, rat_pineal$sclink_unfilter_res)
+rat_gcn$predict_link_cutoff <- rbind(rat_gcn$predict_link_cutoff, rat_pineal$predict_link_cutoff)
+
+write.xlsx(rat_gcn, "20230626_rat_night_photo_melatonin_circadian_gcn.xlsx", colNames = T, rowNames = T)
+```
+
+## 20230624 绘制褪黑激素合成相关基因, 光转导基因以及昼夜节律调控基因的互作网络
+```{r plot GCN}
+
+# generate used GCN table 
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230701_GPCRAnalysis")
+library(scScape)
+library(Seurat)
+
+generate_final_gcn_table <- function(filename, interested_gene, interested_topn, 
+																		 interested_celltype, saved_filename){
+	
+gcn_res <- read.xlsx(filename, sheet = 3, colNames = T)
+index <- gcn_res$regulatoryGene %in% interested_gene | gcn_res$targetGene %in% interested_gene
+temp_res <- gcn_res[index, ]
+onlysclink_res <- temp_res[temp_res$predict_method == "scLink", ]
+twomethod_res <- temp_res[temp_res$predict_method == "GENIE3&scLink", ]
+onlygenie3_res <- temp_res[temp_res$predict_method == "GENIE3", ]
+top50genie3_res <- onlygenie3_res %>% dplyr::group_by(celltype) %>% dplyr::top_n(n = interested_topn, wt = abs(corr))
+
+final_res <- rbind(onlysclink_res, twomethod_res, top50genie3_res)
+
+final_res <- final_res[final_res$celltype %in% interested_celltype, ]
+final_res$string <- "predict"
+string_info <- read.xlsx(filename, sheet = 4)
+
+for (gene_i in intersect(unique(final_res$regulatoryGene), unique(string_info$node1)) ){
+	print(gene_i)
+	gcn_node2 <- final_res$targetGene[final_res$regulatoryGene==gene_i]
+  string_node2 <- string_info$node2[string_info$node1==gene_i]
+  final_res$string[final_res$regulatoryGene==gene_i & final_res$targetGene %in% intersect(gcn_node2, string_node2) ] <- "string"
+}
+
+for (gene_i in intersect(unique(final_res$targetGene), unique(string_info$node2)) ){
+	print(gene_i)
+	gcn_node1 <- final_res$regulatoryGene[final_res$targetGene==gene_i]
+  string_node1 <- string_info$node1[string_info$node2==gene_i]
+  final_res$string[final_res$targetGene==gene_i & final_res$regulatoryGene %in% intersect(gcn_node1, string_node1) ] <- "string"
+}
+write.csv(final_res, saved_filename)
+return(final_res)
+}
+
+filename <- list(zebrafish = "20230703_zebrafish_gpcr_melatonin_gcn_pct_0.1_fc_0.25.xlsx",
+								 rat_day = "20230703_rat_gpcr_melatonin_gcn_pct_0.1_fc_0.25.xlsx",
+								 monkey = "20230703_monkey_gpcr_melatonin_gcn_pct_0.1_fc_0.25.xlsx",
+								 rat_night = "20230626_rat_night_gpcr_melatonin_gcn_pct_0.1_fc_0.25.xlsx")
+genes <- read.xlsx("interested_genes.xlsx", sheet = 1)
+interested_gene_list <- list(zebrafish = as.character(na.omit(genes$zebrafish)),
+												rat_day = as.character(na.omit(genes$rat_day)),
+												monkey = as.character(na.omit(genes$monkey)),
+												rat_night = as.character(na.omit(genes$rat_night)))
+interested_celltype <- list(zebrafish = c("photoreceptors", "Retinal pigment epithelium-like", "Muller glia-like"),
+														rat_day = c("pinealocyte", "Astrocyte"),
+														monkey = c("Pinealocyte", "Astrocyte"),
+														rat_night = c("pinealocyte", "Astrocyte"))
+saved_filename <- list( zebrafish = "20230703_final_zebrafish_gpcr_melatonin_gcn_pct_0.1_fc_0.25.csv",
+												rat_day = "20230703_final_rat_gpcr_melatonin_gcn_pct_0.1_fc_0.25.csv",
+												monkey = "20230703_final_monkey_gpcr_melatonin_gcn_pct_0.1_fc_0.25.csv",
+												rat_night = "20230703_final_rat_night_gpcr_melatonin_gcn_pct_0.1_fc_0.25.csv")
+plot_list <- list()
+for(i in 1:4){
+	print(i)
+	print(filename[[i]])
+	interested_gene <- interested_gene_list[[i]]
+	plot_list[[i]] <- generate_final_gcn_table(filename = filename[[i]], interested_gene = interested_gene, interested_topn = 30,
+												 interested_celltype = interested_celltype[[i]], saved_filename = saved_filename[[i]])
+	plot_list[[i]] <- plot_list[[i]][ , c("regulatoryGene", "targetGene", "corr", "celltype", "string")]
+	colnames(plot_list[[i]]) <- c("node1", "node2", "corr", "celltype", "edge_type")
+}
+
+names(plot_list) <- c("Zebrafish", "Rat_day", "Monkey", "Rat_night")
+
+for (kk in c("Zebrafish", "Rat_day", "Monkey", "Rat_night")){
+	print(kk)
+	for(j in unique(plot_list[[kk]]$celltype)){
+	for (i in unique(plot_list[[kk]]$node1))
+	dd <- intersect(plot_list[[kk]]$node2[plot_list[[kk]]$celltype == j & plot_list[[kk]]$node1 %in% i],
+									plot_list[[kk]]$node1[plot_list[[kk]]$celltype == j & plot_list[[kk]]$node2 %in% i])
+	if(length(dd) > 0) {
+		for (mm in dd)
+			print(mm)
+			print(plot_list[[kk]][plot_list[[kk]]$celltype == j & plot_list[[kk]]$node1 %in% i &  plot_list[[kk]]$node2 %in% mm, ])
+			print(plot_list[[kk]][plot_list[[kk]]$celltype == j & plot_list[[kk]]$node2 %in% i & plot_list[[kk]]$node1 %in% mm, ])
+	}
+}
+}
+
+write.xlsx(plot_list, "20230703_three_species_melatonin_gpcr_plot_gcn.xlsx",
+					 colNames = T, rowNames = F)
+
+
+genename_df <- list()
+genename_df$Zebrafish <- data.frame(genename = unique(c(plot_list$Zebrafish$node1, plot_list$Zebrafish$node2)))
+genename_df$Rat_day <- data.frame(genename = unique(c(plot_list$Rat_day$node1, plot_list$Rat_day$node2)))
+genename_df$Monkey <- data.frame(genename = unique(c(plot_list$Monkey$node1, plot_list$Monkey$node2)))
+genename_df$Rat_night <- data.frame(genename = unique(c(plot_list$Rat_night$node1, plot_list$Rat_night$node2)))
+
+genename_df$Zebrafish$genetype <- "gpcr"
+genename_df$Rat_day$genetype <- "gpcr"
+genename_df$Monkey$genetype <- "gpcr"
+genename_df$Rat_night$genetype <- "gpcr"
+
+genename_df$Zebrafish$genetype[genename_df$Zebrafish$genename %in% c("aanat2", "asmt", "ddc", "tph1a", "tph2")] <- "melatonin"
+genename_df$Rat_day$genetype[genename_df$Rat_day$genename %in% c("Aanat", "Asmt", "Ddc", "Tph1")] <- "melatonin"
+genename_df$Monkey$genetype[genename_df$Monkey$genename %in% c("AANAT", "DDC", "TPH1")] <- "melatonin"
+genename_df$Rat_night$genetype[genename_df$Rat_night$genename %in% c("Tph1", "Aanat", "Asmt", "Ddc")] <- "melatonin"
+
+write.xlsx(genename_df, "20230703_three_species_melatonin_gpcr_genedf.xlsx", colNames = T, rowNames = F)
+
+### plot GCN
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230701_GPCRAnalysis")
+
+library(scScape)
+library(Seurat)
+
+interested_celltype <- list(zebrafish = c("photoreceptors", "Retinal pigment epithelium-like", "Muller glia-like"),
+														rat_day = c("pinealocyte", "Astrocyte"),
+														monkey = c("Pinealocyte", "Astrocyte"),
+														rat_night = c("pinealocyte", "Astrocyte"))
+star_gene <- list(zebrafish = "aanat2",
+									rat_day = "Aanat",
+									monkey = "AANAT",
+									rat_night = "Aanat")
+
+prefix <- c("zebrafish", "rat_day", "monkey", "rat_night")
+
+workpath <- "/home/zhengjh/projects/PinealGland/analysis/20230701_GPCRAnalysis/"
+for (i in 1:4){
+	
+	gcn_link <- read.xlsx("20230703_three_species_melatonin_gpcr_plot_gcn.xlsx", sheet = i, colNames = T)
+	gene_types_df <- read.xlsx("20230703_three_species_melatonin_gpcr_genedf.xlsx", sheet = i, colNames = T)
+
+	folder_name <- paste0(prefix[i], "_GCNPlots")
+	if (!dir.exists(folder_name)) {
+		dir.create(folder_name)
+	} else {
+		message("Directory ClusterFigs already exists.")
+	}
+	setwd(paste0(workpath, folder_name))
+	
+	gcn_link$corr <- abs(gcn_link$corr)
+	plot_list <- list()
+	for(celltype_i in interested_celltype[[i]]){
+		print(celltype_i)
+		try <- gcn_link[gcn_link$celltype == celltype_i, ]
+		plot_params <- list(edge.curved = 0, vertex.label.cex = 0.8)
+		legend_params <- list(x = "bottomright", col = "#777777", pt.cex = 1)
+		PlotGCN(gcn_link = try, gene_types_df,  star_gene = star_gene[[i]], weightCol = "corr", 
+						file_prefix = paste(prefix[i], celltype_i, sep = "_"), edge_scale = 2, node_scale = 0.5,
+						plot_params = plot_params, legend_params = legend_params)
+	}
+	setwd(workpath)
+}
+
+```
+
+## 20230709 形成褪黑激素合成相关基因, 光转导基因以及昼夜节律调控基因的互作网络的表格
+```{r generate GCN}
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/20230709_GCN/")
+
+library(scScape)
+library(Seurat)
+used_gene <- read.xlsx("20230709_gcn_gene_melatonin_photo_circadian_gene.xlsx")
+
+## zebrafish
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+table(zebrafish@active.ident)
+
+targets_geneset <- unique(used_gene$genename[used_gene$group == "zebrafish"])
+
+gene_avg_info <- DotPlot(zebrafish, features = targets_geneset)$data
+setdiff(targets_geneset, rownames(zebrafish))
+
+# Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+
+targets_geneset <- unique(as.character(gene_avg_info$features.plot))
+
+## rod cone 分开找gcn 
+zebrafish <- subset(zebrafish, idents = c("Rod-like photoreceptors", "Cone-like photoreceptors",
+																					"Retinal pigment epithelium-like", "Muller glia-like"))
+zebrafish_gcn <- scScape::GenerateGCN(object = zebrafish, targets_geneset = targets_geneset)
+zebrafish_gcn$gcn_gene <- targets_geneset
+
+## rod 和 cone合在一起
+zebrafish <- subset(zebrafish, idents =  c("Rod-like photoreceptors", "Cone-like photoreceptors"))
+zebrafish$celltype_assign <- gsub("Rod-like photoreceptors", "photoreceptors", zebrafish$celltype_assign)
+zebrafish$celltype_assign <- gsub("Cone-like photoreceptors", "photoreceptors", zebrafish$celltype_assign)
+zebrafish$celltype_assign <- factor(zebrafish$celltype_assign)
+zebrafish@active.ident <- zebrafish$celltype_assign
+
+zebrafish_photo <- scScape::GenerateGCN(object = zebrafish, targets_geneset = targets_geneset)
+zebrafish_gcn$GENIE3_unfilter_res <- rbind(zebrafish_gcn$GENIE3_unfilter_res, zebrafish_photo$GENIE3_unfilter_res)
+zebrafish_gcn$sclink_unfilter_res <- rbind(zebrafish_gcn$sclink_unfilter_res, zebrafish_photo$sclink_unfilter_res)
+zebrafish_gcn$predict_link_cutoff <- rbind(zebrafish_gcn$predict_link_cutoff, zebrafish_photo$predict_link_cutoff)
+
+write.xlsx(zebrafish_gcn, "20230709_zebrafish_photo_melatonin_circadian_gcn.xlsx", colNames = T, rowNames = T)
+
+## rat
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/20230709_GCN/")
+
+library(scScape)
+library(Seurat)
+used_gene <- read.xlsx("20230709_gcn_gene_melatonin_photo_circadian_gene.xlsx")
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+table(rat@active.ident)
+
+targets_geneset <- unique(as.character(used_gene$genename[used_gene$group == "rat_day"]))
+
+gene_avg_info <- DotPlot(rat, features = targets_geneset)$data
+setdiff(targets_geneset, rownames(rat))
+
+# Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+
+targets_geneset <- unique(as.character(gene_avg_info$features.plot))
+
+## α-pinealocyte β-pinealocyte 分开找gcn 
+rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+rat_gcn <- scScape::GenerateGCN(object = rat, targets_geneset = targets_geneset)
+rat_gcn$gcn_gene <- targets_geneset
+
+## α-pinealocyte 和 β-pinealocyte合在一起
+rat <- subset(rat, idents =  c("α-pinealocyte", "β-pinealocyte"))
+rat$celltype_assign <- gsub("α-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- gsub("β-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- factor(rat$celltype_assign)
+rat@active.ident <- rat$celltype_assign
+rat_pineal <- scScape::GenerateGCN(object = rat, targets_geneset = targets_geneset)
+
+rat_gcn$GENIE3_unfilter_res <- rbind(rat_gcn$GENIE3_unfilter_res, rat_pineal$GENIE3_unfilter_res)
+rat_gcn$sclink_unfilter_res <- rbind(rat_gcn$sclink_unfilter_res, rat_pineal$sclink_unfilter_res)
+rat_gcn$predict_link_cutoff <- rbind(rat_gcn$predict_link_cutoff, rat_pineal$predict_link_cutoff)
+
+write.xlsx(rat_gcn, "20230709_rat_photo_melatonin_circadian_gcn.xlsx", colNames = T, rowNames = T)
+
+## monkey
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/20230709_GCN/")
+
+library(scScape)
+library(Seurat)
+used_gene <- read.xlsx("20230709_gcn_gene_melatonin_photo_circadian_gene.xlsx")
+
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+table(monkey@active.ident)
+
+targets_geneset <- unique(as.character(used_gene$genename[used_gene$group == "monkey"]))
+
+gene_avg_info <- DotPlot(monkey, features = targets_geneset)$data
+setdiff(targets_geneset, rownames(monkey))
+
+# Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+
+targets_geneset <- unique(as.character(gene_avg_info$features.plot))
+
+monkey <- subset(monkey, idents = c("Pinealocyte", "Astrocyte"))
+monkey_gcn <- scScape::GenerateGCN(object = monkey, targets_geneset = targets_geneset)
+monkey_gcn$gcn_gene <- targets_geneset
+
+write.xlsx(monkey_gcn, "20230709_monkey_photo_melatonin_circadian_gcn.xlsx", colNames = T, rowNames = T)
+
+## rat night的数据
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/20230709_GCN/")
+
+library(scScape)
+library(Seurat)
+used_gene <- read.xlsx("20230709_gcn_gene_melatonin_photo_circadian_gene.xlsx")
+
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+table(rat@active.ident)
+
+targets_geneset <- unique(as.character(used_gene$genename[used_gene$group == "rat_night"]))
+
+gene_avg_info <- DotPlot(rat, features = targets_geneset)$data
+setdiff(targets_geneset, rownames(rat))
+
+# Filter data
+gene_avg_info <- gene_avg_info[gene_avg_info$pct.exp > 0.01, ]
+gene_avg_info <- gene_avg_info[gene_avg_info$avg.exp > 0.1, ]
+
+targets_geneset <- unique(as.character(gene_avg_info$features.plot))
+
+## α-pinealocyte β-pinealocyte 分开找gcn 
+rat <- subset(rat, idents = c("α-pinealocyte", "β-pinealocyte", "Astrocyte"))
+rat_gcn <- scScape::GenerateGCN(object = rat, targets_geneset = targets_geneset)
+rat_gcn$gcn_gene <- targets_geneset
+
+## α-pinealocyte 和 β-pinealocyte合在一起
+rat <- subset(rat, idents =  c("α-pinealocyte", "β-pinealocyte"))
+rat$celltype_assign <- gsub("α-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- gsub("β-pinealocyte", "pinealocyte", rat$celltype_assign)
+rat$celltype_assign <- factor(rat$celltype_assign)
+rat@active.ident <- rat$celltype_assign
+rat_pineal <- scScape::GenerateGCN(object = rat, targets_geneset = targets_geneset)
+
+rat_gcn$GENIE3_unfilter_res <- rbind(rat_gcn$GENIE3_unfilter_res, rat_pineal$GENIE3_unfilter_res)
+rat_gcn$sclink_unfilter_res <- rbind(rat_gcn$sclink_unfilter_res, rat_pineal$sclink_unfilter_res)
+rat_gcn$predict_link_cutoff <- rbind(rat_gcn$predict_link_cutoff, rat_pineal$predict_link_cutoff)
+
+write.xlsx(rat_gcn, "20230709_rat_night_photo_melatonin_circadian_gcn.xlsx", colNames = T, rowNames = T)
+```
+## 20230709 绘制褪黑激素合成相关基因, 光转导基因以及昼夜节律调控基因的互作网络
+```{r plot GCN}
+
+# generate used GCN table 
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/20230709_GCN/")
+library(scScape)
+library(Seurat)
+
+generate_final_gcn_table <- function(filename, interested_topn, interested_gene, 
+																		 interested_celltype, saved_filename){
+
+
+gcn_res <- read.xlsx(filename, sheet = 3, colNames = T)
+gcn_res <- gcn_res[gcn_res$celltype %in% interested_celltype, ] 
+
+index <- gcn_res$regulatoryGene %in% interested_gene | gcn_res$targetGene %in% interested_gene
+interested_res <- gcn_res[index, ] %>% dplyr::group_by(celltype) %>% dplyr::top_n(n = interested_topn, wt = abs(corr))
+
+final_res <- gcn_res %>% dplyr::group_by(celltype) %>% dplyr::top_n(n = interested_topn, wt = abs(corr))
+final_res <- as.data.frame(final_res)
+final_res <- rbind(final_res, interested_res)
+
+# same pair, select max weight
+final_res <- final_res %>%
+  dplyr::mutate(pair = purrr::pmap(list(regulatoryGene, targetGene), ~ sort(c(..1, ..2)))) %>%
+  dplyr::group_by(celltype, pair) %>%
+  dplyr::slice_max(abs(corr)) %>%
+  dplyr::distinct()
+
+final_res <- as.data.frame(final_res)
+final_res$string <- "predict"
+string_info <- read.xlsx(filename, sheet = 4)
+
+for (gene_i in intersect(unique(final_res$regulatoryGene), unique(string_info$node1)) ){
+	print(gene_i)
+	gcn_node2 <- final_res$targetGene[final_res$regulatoryGene==gene_i]
+  string_node2 <- string_info$node2[string_info$node1==gene_i]
+  final_res$string[final_res$regulatoryGene==gene_i & final_res$targetGene %in% intersect(gcn_node2, string_node2) ] <- "string"
+}
+
+for (gene_i in intersect(unique(final_res$targetGene), unique(string_info$node2)) ){
+	print(gene_i)
+	gcn_node1 <- final_res$regulatoryGene[final_res$targetGene==gene_i]
+  string_node1 <- string_info$node1[string_info$node2==gene_i]
+  final_res$string[final_res$targetGene==gene_i & final_res$regulatoryGene %in% intersect(gcn_node1, string_node1) ] <- "string"
+}
+return(final_res)
+}
+
+interested_gene_list <- list(zebrafish = c("tph1a", "tph2", "ddc","aanat2", "asmt", "csnk1a1", 
+																					 "tefa", "cry1aa", "per2", "cry1bb", "csnk1db", "bhlhe41"),
+														 rat_day = c("Tph1",  "Ddc","Aanat", "Asmt", "Dbp", "Kdm5a", "Per3", "Kpnb1", "Csnk1a1", "Csnk1d"),
+														 monkey = c("TPH1", "DDC", "AANAT", "PER3", "NR1D2", "CLOCK", "CSNK1A1", "RORA", "KDM5A", "CRY1",
+														 					 "NPAS2", "RORB", "KPNB1", "CREBBP", "FBXL3"),
+														 rat_night = c("Tph1",  "Ddc","Aanat", "Asmt", "Dbp", "Rorb", "Cry2", "Per3", "Kpnb1", "Csnk1a1"))
+filename <- list(zebrafish = "20230709_zebrafish_photo_melatonin_circadian_gcn.xlsx",
+								 rat_day = "20230709_rat_photo_melatonin_circadian_gcn.xlsx",
+								 monkey = "20230709_monkey_photo_melatonin_circadian_gcn.xlsx",
+								 rat_night = "20230709_rat_night_photo_melatonin_circadian_gcn.xlsx")
+
+interested_celltype_list <- list(zebrafish = c("photoreceptors", "Retinal pigment epithelium-like", "Muller glia-like"),
+														rat_day = c("pinealocyte", "Astrocyte"),
+														monkey = c("Pinealocyte", "Astrocyte"),
+														rat_night = c("pinealocyte", "Astrocyte"))
+plot_list <- list()
+for(i in 1:4){
+	print(i)
+	print(filename[[i]])
+	plot_list[[i]] <- generate_final_gcn_table(filename = filename[[i]],  interested_gene=interested_gene_list[[i]], interested_topn = 50, 
+												 interested_celltype = interested_celltype_list[[i]], saved_filename = saved_filename[[i]])
+	plot_list[[i]] <- plot_list[[i]][ , c("regulatoryGene", "targetGene", "corr", "celltype", "string")]
+	colnames(plot_list[[i]]) <- c("node1", "node2", "corr", "celltype", "edge_type")
+}
+
+names(plot_list) <- c("Zebrafish", "Rat_day", "Monkey", "Rat_night")
+
+for (kk in c("Zebrafish", "Rat_day", "Monkey", "Rat_night")){
+	print(kk)
+	for(j in unique(plot_list[[kk]]$celltype)){
+	for (i in unique(plot_list[[kk]]$node1))
+	dd <- intersect(plot_list[[kk]]$node2[plot_list[[kk]]$celltype == j & plot_list[[kk]]$node1 %in% i],
+									plot_list[[kk]]$node1[plot_list[[kk]]$celltype == j & plot_list[[kk]]$node2 %in% i])
+	if(length(dd) > 0) {
+		for (mm in dd)
+			print(mm)
+			print(plot_list[[kk]][plot_list[[kk]]$celltype == j & plot_list[[kk]]$node1 %in% i &  plot_list[[kk]]$node2 %in% mm, ])
+			print(plot_list[[kk]][plot_list[[kk]]$celltype == j & plot_list[[kk]]$node2 %in% i & plot_list[[kk]]$node1 %in% mm, ])
+	}
+}
+}
+
+write.xlsx(plot_list, "20230709_three_species_melatonin_gpcr_plot_gcn.xlsx",
+					 colNames = T, rowNames = F)
+
+
+genename_df <- list()
+genename_df$Zebrafish <- data.frame(genename = unique(c(plot_list$Zebrafish$node1, plot_list$Zebrafish$node2)))
+genename_df$Rat_day <- data.frame(genename = unique(c(plot_list$Rat_day$node1, plot_list$Rat_day$node2)))
+genename_df$Monkey <- data.frame(genename = unique(c(plot_list$Monkey$node1, plot_list$Monkey$node2)))
+genename_df$Rat_night <- data.frame(genename = unique(c(plot_list$Rat_night$node1, plot_list$Rat_night$node2)))
+
+genelist <- read.xlsx("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/PhotoMelatoninClockGenesets.xlsx")
+
+genename_df$Zebrafish$genetype <- genelist$Group[match(genename_df$Zebrafish$genename, genelist$ZebrafishGenename)]
+genename_df$Rat_day$genetype <- genelist$Group[match(genename_df$Rat_day$genename, genelist$RatGenename)]
+genename_df$Monkey$genetype <- genelist$Group[match(genename_df$Monkey$genename, genelist$MonkeyGenename)]
+genename_df$Rat_night$genetype <- genelist$Group[match(genename_df$Rat_night$genename, genelist$RatGenename)]
+
+write.xlsx(genename_df, "20230709_three_species_melatonin_gpcr_genedf.xlsx", colNames = T, rowNames = F)
+
+### plot GCN
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/20230709_GCN")
+
+library(scScape)
+library(Seurat)
+
+interested_celltype <- list(zebrafish = c("photoreceptors", "Retinal pigment epithelium-like", "Muller glia-like"),
+														rat_day = c("pinealocyte", "Astrocyte"),
+														monkey = c("Pinealocyte", "Astrocyte"),
+														rat_night = c("pinealocyte", "Astrocyte"))
+star_gene <- list(zebrafish = "aanat2",
+									rat_day = "Aanat",
+									monkey = "AANAT",
+									rat_night = "Aanat")
+
+prefix <- c("zebrafish", "rat_day", "monkey", "rat_night")
+
+workpath <- "/home/zhengjh/projects/PinealGland/analysis/20230617_revised_Figure4_res/20230709_GCN/"
+
+for (i in 1:4){
+	
+	gcn_link <- read.xlsx("20230709_three_species_melatonin_gpcr_plot_gcn.xlsx", sheet = i, colNames = T)
+	gene_types_df <- read.xlsx("20230709_three_species_melatonin_gpcr_genedf.xlsx", sheet = i, colNames = T)
+
+	folder_name <- paste0(prefix[i], "_GCNPlots")
+	if (!dir.exists(folder_name)) {
+		dir.create(folder_name)
+	} else {
+		message(folder_name, "already exists.")
+	}
+	setwd(paste0(workpath, folder_name))
+	
+	gcn_link$corr <- abs(gcn_link$corr)
+	plot_list <- list()
+	for(celltype_i in interested_celltype[[i]]){
+		print(celltype_i)
+		try <- gcn_link[gcn_link$celltype == celltype_i, ]
+		plot_params <- list(edge.curved = 0, vertex.label.cex = 0.8)
+		legend_params <- list(x = "bottomright", col = "#777777", pt.cex = 1)
+		PlotGCN(gcn_link = try, gene_types_df,  star_gene = star_gene[[i]], weightCol = "corr", 
+						file_prefix = paste(prefix[i], celltype_i, sep = "_"), edge_scale = 2, node_scale = 0.6,
+						plot_params = plot_params, legend_params = legend_params)
+	}
+	setwd(workpath)
+}
+
+```
+

@@ -1,0 +1,1097 @@
+---
+title: "retina_data_analysis"
+author: "Jihong Zheng"
+date: "2023-03-03"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Retina data analysis
+## 1. Download retina data
+```{bash Download retina data}
+
+cd ~/projects/PinealGland/data/retina
+## zebrafish
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM4861nnn/GSM4861218/suppl/GSM4861218_WT_expression.tar.gz
+wget https://ftp.ncbi.nlm.nih.gov/geo/series/GSE160nnn/GSE160140/suppl/GSE160140_cluster.tar.gz
+wget https://ftp.ncbi.nlm.nih.gov/geo/series/GSE160nnn/GSE160140/suppl/GSE160140_marker_gene.tar.gz
+tar -zxvf Zebrafish_GSE160140_cluster.tar.gz -C zebrafish
+tar -zxvf Zebrafish_GSE160140_marker_gene.tar.gz -C zebrafish
+tar -zxvf Zebrafish_GSM4861218_WT_expression.tar.gz -C zebrafish
+## rat
+# wt1
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM6403nnn/GSM6403183/suppl/GSM6403183_WT1_0week_barcodes.tsv.gz
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM6403nnn/GSM6403183/suppl/GSM6403183_WT1_0week_features.tsv.gz
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM6403nnn/GSM6403183/suppl/GSM6403183_WT1_0week_matrix.mtx.gz
+## 备注 其中GSM6403183_WT1_0week_matrix.mtx.gz数据下载出错 不想要了
+gunzip -d GSM6403183_WT1_0week_barcodes.tsv.gz
+# wt2
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM6403nnn/GSM6403184/suppl/GSM6403184_WT2_0week_barcodes.tsv.gz
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM6403nnn/GSM6403184/suppl/GSM6403184_WT2_0week_features.tsv.gz
+wget https://ftp.ncbi.nlm.nih.gov/geo/samples/GSM6403nnn/GSM6403184/suppl/GSM6403184_WT2_0week_matrix.mtx.gz
+
+## monkey
+## https://db.cngb.org/nhpca/download
+wget https://ftp.cngb.org/pub/SciRAID/nhpca/download/1.Sample_information/Sample_infor_Retina.txt.gz
+wget https://ftp.cngb.org/pub/SciRAID/nhpca/download/2.Raw_Gene_Count/Matrix_Retina.txt.gz
+wget https://ftp.cngb.org/pub/SciRAID/nhpca/download/3.Metadata/Metadata_Retina.txt.gz
+wget https://ftp.cngb.org/pub/SciRAID/nhpca/download/4.Processed_datasets/Seurat4.0_Retina.rds
+
+
+```
+
+## 2. seurat analysis
+### quality control
+```{bash}
+# zebrafish
+SingleDataQualityOverview.R -o /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/zebrafish -t "10X" --datapath /home/zhengjh/projects/PinealGland/data/retina/zebrafish/cellranger --project_name "zebrafish_retina" --mt_pattern "^mt-" --rb_pattern "^rpl|^rps" 
+
+# rat
+SingleDataQualityOverview.R -o /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/rat -t "10X" --datapath /home/zhengjh/projects/PinealGland/data/retina/rat/GSM6403184_cellranger --project_name "rat_retina" --mt_pattern "^Mt-" --rb_pattern "^Rpl|^Rps"
+
+# monkey
+# 猴子的数据直接使用处理好的rds
+```
+### seurat pipeline
+#### zebrafish: run bash pipeline
+```{bash zebrafish seurat pipeline}
+outputpath=/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/zebrafish/
+project_name="zebrafish_retina" # is the same in the MultipleDataQualityOverview.R file_prefix
+inputdatapath=${outputpath}/${project_name}_dataquality_overview_seurat.rds
+file_prefix="zebrafish_retina_sc_logtransform"
+cd ${outputpath} 
+Rscript /home/zhengjh/scripts/seurat/pipeline/SingleDataLogNormalizeClustering.R -o $outputpath --seuratobject $inputdatapath \
+--min_gene 200 --max_gene 5500 --min_ncountRNA 0 --max_ncountRNA 20000 \
+--max_mt_percent 30 --max_rb_percent 20 --file_prefix $file_prefix \
+--scale_factor 10000 --nfeatures 3000  --npc_used 30 \
+--k_parameter 25 --resolution_number 0.5 --min_pct 0.25 --logfc_threshold 0.25  \
+--p_val_adj 0.05 --top_num 10 --mt_rb_pattern "^mt-|^rpl|^rps"
+
+## run_seurat_logtransform_zebrafish_retina.sh
+
+```
+#### zebrafish: generate figure6
+```{r generate figure 6}
+rm(list = ls())
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/zebrafish/")
+seurat_rds <- readRDS("zebrafish_retina_sc_logtransform_lognormalize_clustering_seurat.rds")
+
+### cell type identification
+seurat_rds$small_celltype <- as.character(seurat_rds$celltype_assign)
+seurat_rds$small_celltype <- gsub("cnga1a/zgc:162144|rho/pde6gb", "Rod", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("pde6c/opn1mw2", "Red/Green cone", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("arr3b/opn1sw2", "UV/Blue cone", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("apoeb/si:ch211-152c2.3", "Muller glia", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("rprmb/mdka", "HC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("mb/rgrb", "RPE", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("si:ch211-195b11.3/si:dkey-238o13.4", "AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("cd59/cldnk", "Astrocyte", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("ankrd9/nrgna", "ankrd9-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("calb1/irx7", "irx7-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("fezf2/si:ch211-232m10.6", "fezf2-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("nrgna/s100a10b", "s100a10b-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("nxph1/fezf2", "nxph1-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("rs1a/gnao1b", "gnao1b-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("six3b/ppdpfb", "ppdpfb-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("syt1a/slc6a1b|rbpms2a/cplx2l", "RGC", seurat_rds$small_celltype)
+### big celltype
+seurat_rds$celltype_assign <- as.character(seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("cnga1a/zgc:162144|rho/pde6gb", "Rod", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("pde6c/opn1mw2", "Cone", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("arr3b/opn1sw2", "Cone", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("apoeb/si:ch211-152c2.3", "Muller glia", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("rprmb/mdka", "HC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("mb/rgrb", "RPE", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("si:ch211-195b11.3/si:dkey-238o13.4", "AC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("cd59/cldnk", "Astrocyte", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("ankrd9/nrgna", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("calb1/irx7", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("fezf2/si:ch211-232m10.6", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("nrgna/s100a10b", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("nxph1/fezf2", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("rs1a/gnao1b", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("six3b/ppdpfb", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("syt1a/slc6a1b|rbpms2a/cplx2l", "RGC", seurat_rds$celltype_assign)
+
+levels_redefine <- c("AC", "HC", "BC", "Cone",
+										 "Rod", "RPE", "Muller glia", "RGC", "Astrocyte")
+
+seurat_rds$celltype_assign <- factor(as.character(seurat_rds$celltype_assign), 
+																	levels =levels_redefine )
+seurat_rds@active.ident <- seurat_rds$celltype_assign
+saveRDS(seurat_rds, "final_zebrafish_retina_seurat.rds")
+setwd("5.figures")
+
+##### clustering and cellpercentage #####
+setwd("20230315_replots")
+p1_cluster <- DimPlot(seurat_rds, group.by = "celltype_assign", reduction = "tsne",label = T, pt.size = 0.5) + NoLegend()
+ggsave(filename = "Clustering_seurat_zebrafish_retina_20230315.pdf", plot = p1_cluster, width = 6, height = 6)
+
+x<-ggplot_build(p1_cluster)
+info = data.frame(colour = x$data[[1]]$colour, group = x$data[[1]]$group)
+info <- unique((arrange(info, group)))
+cols <- as.character(info$colour)
+
+
+cellnum <- as.data.frame(table(seurat_rds$celltype_assign, 
+                               seurat_rds$orig.ident))
+colnames(cellnum) <- c("celltype", "group", "Freq")
+percentageplot <- GeomcolWrap(plot_data = cellnum, 
+										x_group = cellnum$group, 
+										y_value = cellnum$Freq, fill_group = cellnum$celltype, 
+										fill_cols = cols, 
+										title_name = "Percent of Cells from each sample",
+										x_axis_name = "sample", y_axis_name = "Percent")
+ggsave("Cellpercentageplot_zebrafish_retina_20230315.pdf", percentageplot, width = 8, height = 8)
+write.csv(cellnum, "Cellpercentagetable_zebrafish_retina.csv")
+
+### qc
+seurat_rds$celltype_assign <- seurat_rds@active.ident
+p1 <- VlnPlot(object = seurat_rds, features = c("nFeature_RNA", "nCount_RNA", 
+                                                 "percent.mt","percent.rb"), 
+ 						pt.size=0,  group.by = "celltype_assign", ncol = 4, 
+							cols = cols)
+
+saveRDS(p1,"zebrafish_qc_plot.rds")
+
+#### dotplot of markers and cluster based on top20 markers ####
+
+plots <- hclustBasedTop20marker(seurat_rds = seurat_rds, file_prefix = "zebrafish_retina",
+											 min_pct = 0.25, logfc_threshold = 0.25, p_val_adj = 0.05, mt_rb_pattern = "^mt-|^rpl|^rps", top_num = 20,
+											 width_num = 10, height_num = 12)
+
+file_prefix <- "zebrafish_retina"
+pdf(paste0(file_prefix,"_cluster_dendrogram_ward_D2_top20_with_dotplotmarker.pdf"), 10, 12)
+print(plots)
+dev.off()
+
+```
+#### ZCL eye data: process data
+```{r ZCL eye data as the supplemental figure}
+
+rm(list = ls())
+setwd( "/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/eye_extract_retina_from_ZCL/")
+load("Eye.RData")
+
+seuratobject[["percent.rb"]] <- PercentageFeatureSet(object = seuratobject, pattern = "^rpl|^rps")
+seuratobject[["percent.mt"]] <- PercentageFeatureSet(object = seuratobject, pattern = "^mt-")
+
+VlnPlot(seuratobject, features = c("percent.rb", "percent.mt"))
+
+seuratobject <- subset(seuratobject, anno %in% c("Eye.Müller_glia", "Eye.Retinal_cone_cell", "Eye.Retinal_pigment_epithelial_cell", "Eye.Retinal_rod_cell"))
+saveRDS(seuratobject, "ZCL_eye_retina_seuratobject.rds")
+
+```
+
+#### ZCL eye data: run seurat pipeline
+```{sh ZCL eye data as the supplemental figure}
+
+outputpath=/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/eye_extract_retina_from_ZCL/
+inputdatapath=${outputpath}/ZCL_eye_retina_seuratobject.rds
+file_prefix="zebrafish_ZCL_retina_sc_logtransform"
+cd ${outputpath} 
+Rscript /home/zhengjh/scripts/seurat/pipeline/SingleDataLogNormalizeClustering.R -o $outputpath --seuratobject $inputdatapath \
+--min_gene 200 --max_gene 5500 --min_ncountRNA 0 --max_ncountRNA 20000 \
+--max_mt_percent 30 --max_rb_percent 20 --file_prefix $file_prefix \
+--scale_factor 10000 --nfeatures 3000  --npc_used 30 \
+--k_parameter 25 --resolution_number 0.5 --min_pct 0.25 --logfc_threshold 0.25  \
+--p_val_adj 0.05 --top_num 10 --mt_rb_pattern "^mt-|^rpl|^rps"
+
+```
+#### ZCL zebrafish retina: generate figures
+```{r generate ZCL zebrafish retina sup figures}
+
+rm(list = ls())
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/eye_extract_retina_from_ZCL/")
+seurat_rds <- readRDS("zebrafish_ZCL_retina_sc_logtransform_lognormalize_clustering_seurat.rds")
+
+### big celltype
+seurat_rds$celltype_assign <- as.character(seurat_rds$anno)
+seurat_rds$celltype_assign <- gsub("Eye.Müller_glia", "Muller glia", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Eye.Retinal_cone_cell", "Cone", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Eye.Retinal_pigment_epithelial_cell", "RPE", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Eye.Retinal_rod_cell", "Rod", seurat_rds$celltype_assign)
+
+
+levels_redefine <- c( "Cone", "Rod", "RPE", "Muller glia")
+
+seurat_rds$celltype_assign <- factor(as.character(seurat_rds$celltype_assign), 
+																	levels =levels_redefine )
+seurat_rds@active.ident <- seurat_rds$celltype_assign
+saveRDS(seurat_rds, "final_ZCL_zebrafish_retina_seurat.rds")
+
+setwd("5.figures")
+
+##### clustering and cellpercentage #####
+cols <- c("#00BA38", "#00C19F", "#00B9E3", "#619CFF")
+p1_cluster <- DimPlot(seurat_rds, group.by = "celltype_assign", reduction = "umap",label = T, pt.size = 0.5, cols = cols) + NoLegend()
+ggsave(filename = "Clustering_seurat_ZCL_zebrafish_retina_20230316.pdf", plot = p1_cluster, width = 6, height = 6)
+seurat_rds$orig.ident <- gsub("Eyes", "Eye",  seurat_rds$orig.ident)
+cellnum <- as.data.frame(table(seurat_rds$celltype_assign, 
+                               seurat_rds$orig.ident))
+colnames(cellnum) <- c("celltype", "group", "Freq")
+percentageplot <- GeomcolWrap(plot_data = cellnum, 
+										x_group = cellnum$group, 
+										y_value = cellnum$Freq, fill_group = cellnum$celltype, 
+										fill_cols = cols, 
+										title_name = "Percent of Cells from each sample",
+										x_axis_name = "sample", y_axis_name = "Percent")
+ggsave("Cellpercentageplot_ZCL_zebrafish_retina_20230315.pdf", percentageplot, width = 8, height = 8)
+write.csv(cellnum, "Cellpercentagetable_ZCL_zebrafish_retina.csv")
+
+
+#### dotplot of markers and cluster based on top20 markers ####
+
+plots <- hclustBasedTop20marker(seurat_rds = seurat_rds, file_prefix = "ZCL_zebrafish_retina",
+											 min_pct = 0.25, logfc_threshold = 0.25, p_val_adj = 0.05, mt_rb_pattern = "^mt-|^rpl|^rps", top_num = 20,
+											 width_num = 10, height_num = 12)
+
+file_prefix <- "ZCL_zebrafish_retina"
+pdf(paste0(file_prefix,"_cluster_dendrogram_ward_D2_top20_with_dotplotmarker.pdf"), 10, 8)
+print(plots)
+dev.off()
+```
+#### combined zebrafish data: process data
+```{r combine zebrafish retina data and ZCL zebrafish retina data }
+
+#### just use RPE celltype
+rm(list = ls())
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/combine_zebrafish_GSE160140_and_ZCL_retina/")
+
+gse_seurat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/zebrafish/final_zebrafish_retina_seurat.rds")
+zcl_seurat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/eye_extract_retina_from_ZCL/final_ZCL_zebrafish_retina_seurat.rds")
+zcl_seurat <- subset(zcl_seurat, idents = "RPE")
+
+data_list <- list(genename = data.frame(genename = union(rownames(gse_seurat), rownames(zcl_seurat))),
+									df1 = as.data.frame(gse_seurat@assays$RNA@counts),
+                  df2 =  as.data.frame(zcl_seurat@assays$RNA@counts))
+
+data_list$df1$genename <- rownames(gse_seurat)
+data_list$df2$genename <- rownames(zcl_seurat)
+a <- Reduce(function(x,y) merge(x,y,by="genename",all.x=TRUE), data_list, accumulate =FALSE)
+a[is.na(a)] <- 0
+rownames(a) <- a$genename
+a$genename <- NULL
+a <- as.matrix(a)
+
+seurat_rds <- CreateFirstFilterSeuratObject(exp_count = a, pr_name = "combine_zebrafishdata", min_cell = 3, min_gene = 0, mt_pattern = "^mt-", rb_pattern = "^rpl|^rps")
+
+seurat_rds$batch <- c(rep("GSE160140", ncol(gse_seurat)), rep("ZCL_retina", ncol(zcl_seurat)))
+seurat_rds$orig.ident <- as.character(seurat_rds$batch)
+seurat_rds$celltype_final_used <- c(as.character(gse_seurat$celltype_assign), as.character(zcl_seurat$celltype_assign))
+
+saveRDS(seurat_rds, "preinput_combine_gse160140_zcl_retina.rds")
+
+```
+
+#### combined zebrafish data: bash run harmony
+```{sh combine zebrafish data run harmony}
+
+outputpath="/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/combine_zebrafish_GSE160140_and_ZCL_retina"
+project_name="zebrafish_retina_integrated_analysis" # is the same in the MultipleDataQualityOverview.R file_prefix
+inputdatapath=${outputpath}/preinput_combine_gse160140_zcl_retina.rds
+cd ${outputpath}
+file_prefix="zebrafish_retina_lognorm" 
+ Rscript /home/zhengjh/scripts/seurat/pipeline/MutilDataLogHarmonyintegrate.R -o $outputpath --seuratobject $inputdatapath \
+--min_gene 200 --max_gene 5500 --min_ncountRNA 0 --max_ncountRNA 20000 \
+--max_mt_percent 30 --max_rb_percent 20 --file_prefix $file_prefix \
+--scale_factor 10000 --nfeatures 3000 --npc_used 30 \
+--k_parameter 25 --resolution_number 0.5 --min_pct 0.25 --logfc_threshold 0.25  \
+--p_val_adj 0.05 --top_num 10 --mt_rb_pattern "^mt-|^rpl|^rps" 
+
+source activate r403
+nohup sh run_zebrafish_retina_harmony.sh  > harmonyout.file 2>&1 &
+```
+
+#### combined zebrafish data: generate figure6 using combined zebrafish retina RPE data
+```{r generate figure6 zebrafish part}
+rm(list = ls())
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/combine_zebrafish_GSE160140_and_ZCL_retina")
+seurat_rds <- readRDS("zebrafish_retina_lognorm_harmony_seurat.rds")
+
+
+seurat_rds$celltype_assign <- seurat_rds$celltype_final_used
+
+
+levels_redefine <- c("AC", "HC", "BC", "Cone",
+										 "Rod", "RPE", "Muller glia", "RGC", "Astrocyte")
+
+seurat_rds$celltype_assign <- factor(as.character(seurat_rds$celltype_assign), 
+																	levels =levels_redefine )
+
+
+seurat_rds@active.ident <- seurat_rds$celltype_assign
+saveRDS(seurat_rds, "final_combined_zebrafish_retina_seurat.rds")
+setwd("5.figures")
+
+##### clustering and cellpercentage #####
+p1_cluster <- DimPlot(seurat_rds, group.by = "celltype_assign", reduction = "tsne",label = T, pt.size = 0.5) + NoLegend()
+ggsave(filename = "Clustering_seurat_zebrafish_retina_20230316.pdf", plot = p1_cluster, width = 6, height = 6)
+
+x<-ggplot_build(p1_cluster)
+info = data.frame(colour = x$data[[1]]$colour, group = x$data[[1]]$group)
+info <- unique((arrange(info, group)))
+cols <- as.character(info$colour)
+
+seurat_rds$orig.ident <- "all"
+cellnum <- as.data.frame(table(seurat_rds$celltype_assign, 
+                               seurat_rds$orig.ident))
+colnames(cellnum) <- c("celltype", "group", "Freq")
+percentageplot <- GeomcolWrap(plot_data = cellnum, 
+										x_group = cellnum$group, 
+										y_value = cellnum$Freq, fill_group = cellnum$celltype, 
+										fill_cols = cols, 
+										title_name = "Percent of Cells from each sample",
+										x_axis_name = "sample", y_axis_name = "Percent")
+ggsave("Cellpercentageplot_zebrafish_retina_20230316.pdf", percentageplot, width = 8, height = 8)
+write.csv(cellnum, "Cellpercentagetable_zebrafish_retina.csv")
+
+### qc
+seurat_rds$celltype_assign <- seurat_rds@active.ident
+p1 <- VlnPlot(object = seurat_rds, features = c("nFeature_RNA", "nCount_RNA", 
+                                                 "percent.mt","percent.rb"), 
+ 						pt.size=0,  group.by = "celltype_assign", ncol = 4, 
+							cols = cols)
+
+saveRDS(p1,"zebrafish_qc_plot.rds")
+
+#### dotplot of markers and cluster based on top20 markers ####
+
+plots <- hclustBasedTop20marker(seurat_rds = seurat_rds, file_prefix = "combined_zebrafish_retina",
+											 min_pct = 0.25, logfc_threshold = 0.25, p_val_adj = 0.05, mt_rb_pattern = "^mt-|^rpl|^rps", top_num = 20,
+											 width_num = 10, height_num = 12)
+
+file_prefix <- "zebrafish_retina"
+pdf(paste0(file_prefix,"_cluster_dendrogram_ward_D2_top20_with_dotplotmarker.pdf"), 10, 12)
+print(plots)
+dev.off()
+```
+
+#### rat: run bash pipeline
+```{bash rat seurat pipeline}
+
+outputpath=/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/rat/
+project_name="rat_retina" # is the same in the MultipleDataQualityOverview.R file_prefix
+inputdatapath=${outputpath}/${project_name}_dataquality_overview_seurat.rds
+file_prefix="rat_retina_sc_logtransform"
+cd ${outputpath} 
+Rscript /home/zhengjh/scripts/seurat/pipeline/SingleDataLogNormalizeClustering.R -o $outputpath --seuratobject $inputdatapath \
+--min_gene 200 --max_gene 5500 --min_ncountRNA 0 --max_ncountRNA 20000 \
+--max_mt_percent 30 --max_rb_percent 20 --file_prefix $file_prefix \
+--scale_factor 10000 --nfeatures 3000  --npc_used 30 \
+--k_parameter 25 --resolution_number 0.5 --min_pct 0.25 --logfc_threshold 0.25  \
+--p_val_adj 0.05 --top_num 10 --mt_rb_pattern "^mt-|^rpl|^rps"
+## run_seurat_logtransform_rat_retina.sh
+```
+
+#### rat: generate figure6 part
+```{r generate figure6 rat part}
+
+rm(list = ls())
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/rat/")
+seurat_rds <- readRDS("rat_retina_sc_logtransform_lognormalize_clustering_seurat.rds")
+
+
+# Hba-a2.1这个是红细胞，去除
+seurat_rds <- subset(seurat_rds, idents = "Hba-a2.1/LOC103694857", invert = T)
+DimPlot(seurat_rds, label=T, reduction = "tsne", group.by = "celltype_assign") + NoLegend()
+
+### cell type identification
+
+## small celltpe 
+seurat_rds$small_celltype <- as.character(seurat_rds$celltype_assign)
+seurat_rds$small_celltype <- gsub("RGD1560925/Zbtb8a|Pdc/Hspa1b|Rp1/Rims2|Cep290/Itsn2|Gngt1/AA926063", "Rod",
+																	seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Pde6h/Gnat2", "Cone", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Pvalb/Ppp1r1a", "AC/HC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Cldn5/Pltp", "Endothelial", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Mgp/Vtn", "Pericyte", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Ccl4/Cst3|C1qa/Cst3", "Microglia", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Apoe/Glul", "Muller glia", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Lamp5/Cabp1|Cartpt/Lamp5|C1ql2/Cartpt", "AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("cd59/cldnk", "Astrocyte", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Pcp4/Gsg1", "Pcp4-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("S100a7l2/Gsg1", "S100a7l2-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Sparcl1/Gng13", "Gng13-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Nme1/Scg2", "Nme1-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Qpct/Pcp2", "Pcp2-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("Fcer1a/Ptgds", "Fcer1a-high BC", seurat_rds$small_celltype)
+
+## total
+seurat_rds$celltype_assign <- as.character(seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("RGD1560925/Zbtb8a|Pdc/Hspa1b|Rp1/Rims2|Cep290/Itsn2|Gngt1/AA926063", "Rod", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Pde6h/Gnat2", "Cone", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Pvalb/Ppp1r1a", "AC/HC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Cldn5/Pltp", "Endothelial", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Mgp/Vtn", "Pericyte", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Ccl4/Cst3|C1qa/Cst3", "Microglia", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Apoe/Glul", "Muller glia", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Lamp5/Cabp1|Cartpt/Lamp5|C1ql2/Cartpt", "AC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("cd59/cldnk", "Astrocyte", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Pcp4/Gsg1", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("S100a7l2/Gsg1", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Sparcl1/Gng13", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Nme1/Scg2", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Qpct/Pcp2", "BC", seurat_rds$celltype_assign)
+seurat_rds$celltype_assign <- gsub("Fcer1a/Ptgds", "BC", seurat_rds$celltype_assign)
+
+
+levels_redefine <- c("AC", "AC/HC", "BC", "Cone", "Rod",
+										 "Microglia", "Muller glia",  "Endothelial", "Pericyte")
+# [1] "#F8766D" "#E38900" "#C49A00" "#99A800" "#53B400" "#00BC56" "#00C094" "#00BFC4" "#00B6EB" "#06A4FF" "#A58AFF"
+# [12] "#DF70F8" "#FB61D7" "#FF66A8"
+seurat_rds$celltype_assign <- factor(seurat_rds$celltype_assign, levels = levels_redefine)
+seurat_rds@active.ident <- seurat_rds$celltype_assign
+saveRDS(seurat_rds, "rat_retina.rds")
+setwd("5.figures")
+#dir.create("20230315_replots")
+setwd("20230315_replots")
+##### clustering #####
+p1 <- DimPlot(seurat_rds, group.by = "celltype_assign", reduction = "tsne",label = T) 
+x<-ggplot_build(p1)
+info = data.frame(colour = x$data[[1]]$colour, group = x$data[[1]]$group)
+info <- unique((arrange(info, group)))
+cols <- as.character(info$colour)
+
+pdf("Clustering_seurat_rat_retina_20230315.pdf", 6, 6)
+DimPlot(seurat_rds, group.by = "celltype_assign", reduction = "tsne",label = T) + NoLegend()
+dev.off()
+
+seurat_rds$celltype_assign <- seurat_rds@active.ident
+p1 <- VlnPlot(object = seurat_rds, features = c("nFeature_RNA", "nCount_RNA", 
+                                                 "percent.mt","percent.rb"), 
+ 						pt.size=0,  group.by = "celltype_assign", ncol = 4, 
+							cols = cols)
+
+saveRDS(p1,"rat_qc_plot.rds")
+
+#### cell barplot #####
+cellnum <- as.data.frame(table(seurat_rds$celltype_assign, 
+                               seurat_rds$orig.ident))
+colnames(cellnum) <- c("celltype", "group", "Freq")
+
+percentageplot <- GeomcolWrap(plot_data = cellnum, 
+										x_group = cellnum$group, 
+										y_value = cellnum$Freq, fill_group = cellnum$celltype, 
+										fill_cols = cols, 
+										title_name = "Percent of Cells from each sample",
+										x_axis_name = "sample", y_axis_name = "Percent")
+ggsave("Cellpercentageplot_rat_retina_20230315.pdf", percentageplot, width = 8, height = 8)
+write.xlsx(cellnum, "Cellpercentagetable_rat_retina.xlsx", rowNames = T, colNames = T, overwrite = T)
+
+#### dotplot of markers and cluster based on top20 markers ####
+
+
+plots <- hclustBasedTop20marker(seurat_rds = seurat_rds, file_prefix = "rat_retina",
+											 min_pct = 0.25, logfc_threshold = 0.25, p_val_adj = 0.05, mt_rb_pattern = "^Mt-|^Rpl|^Rps", top_num = 20,
+											 width_num = 10, height_num = 12)
+
+file_prefix <- "rat_retina"
+pdf(paste0(file_prefix,"_cluster_dendrogram_ward_D2_top20_with_dotplotmarker.pdf"), 10, 15)
+print(plots)
+dev.off()
+
+```
+#### monkey: generate figure6 part
+```{r generate figure6 rat part}
+
+### monkey 用现成的
+rm(list = ls())
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/monkey/")
+seurat_rds <- readRDS("/home/zhengjh/projects/PinealGland/data/retina/monkey/Monkey_Seurat4.0_Retina.rds")
+
+
+seurat_rds[["percent.rb"]] <- PercentageFeatureSet(object = seurat_rds, pattern = "^RPL|^RPS")
+VlnPlot(seurat_rds, features = "percent.rb")
+
+seurat_rds$celltype_paper <- seurat_rds$Celltype
+
+SeuratQC(seurat_rds, name_pre = "monkey_retina")
+
+seurat_rds <- subset(seurat_rds, nCount_RNA < 15000 &
+                              nFeature_RNA < 5500 & nFeature_RNA > 200  & percent.mt < 10 &
+                              percent.rb < 20 )
+seurat_rds <- SelectPCsByLogNormalize(seurat_rds, file_prefix = "monkey_retina",
+																			scale_factor = 10000, npc_plot = 50, nfeatures = 3000)
+
+seurat_rds <- PlotCluster(exp_count.seurat = seurat_rds, file_prefix = "monkey_retina", 
+													npc_used = 30, k_param = 25, resolution_number = 0.5)
+
+
+cluster.markers <- FindmarkerForCluster(exp_count.seurat = seurat_rds, file_prefix = "monkey_retina", min.pct = 0.25,logfc.threshold = 0.25,p_val_adj = 0.05,mt_rb_pattern = "^RPL|^RPS")
+top10 <- TopMarkersInCluster(cluster.markers = cluster.markers,file_prefix = "monkey_retina", top_num = 10)
+
+seurat_rds <- MapTop2MarkerEachCluster(exp_count.seurat = seurat_rds, cluster.markers = cluster.markers, file_prefix = "monkey_retina")
+
+p1 <- DimPlot(seurat_rds, group.by = "celltype_assign", reduction = "tsne", label = T) + NoLegend()
+p2 <- DimPlot(seurat_rds, group.by = "celltype_paper", reduction = "tsne", label = T) + NoLegend()
+
+### cell type identification
+## small celltype
+seurat_rds$small_celltype <- as.character(seurat_rds$celltype_assign)
+seurat_rds$small_celltype <- gsub("PDE6A/SAG", "Rod", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("ARR3/KCNB2", "Cone", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("ABCA13/CSMD1", "CSMD1-high AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("C4H6orf163/CRYBG3", "CRYBG3-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("CACNA1G/SAMSN1", "SAMSN1-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("CALB2/CDH7", "CALB2-high AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("CARTPT/PTPRK", "CARTPT-high AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("CNTNAP5/GRIK1", "GRIK1-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("CORIN/COL19A1", "CORIN-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("ENSMFAG00000000004/GALNTL6", "GC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("ENSMFAG00000030468/DOPEY2", "DOPEY2-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("GLRA3/ERBB4", "GLRA3-high AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("GRIK1/ERBB4", "GRIK1-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("GRIK1/NETO1", "GRIK1-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("HKDC1/WIF1", "Muller glia", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("IGFBP3/KLHL5", "KLHL5-high AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("IL1RAPL2/ENSMFAG00000030038", "GC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("INPP4B/GRM7", "GRM7-high AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("LRRTM4/TRPM1", "TRPM1-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("NEFL/KCNC2", "GC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("NETO2/GALNTL6", "GC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("PKHD1/TRPM1", "PKHD1-high BC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("PLEKHH2/RBFOX1", "RBFOX1-high AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("PTPRK/ROBO1", "ROBO1-high AC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("SNTG2/THSD7B", "HC", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("SRGN/APBB1IP", "Microglia", seurat_rds$small_celltype)
+seurat_rds$small_celltype <- gsub("ZNF804A/GRIK2", "GRIK2-high AC", seurat_rds$small_celltype)
+DimPlot(seurat_rds, label = T, reduction = "tsne", group.by = "small_celltype")
+## total
+seurat_rds$celltype_assign <- as.character(seurat_rds$small_celltype)
+seurat_rds$celltype_assign[grep("AC$", seurat_rds$celltype_assign)] <- "AC"
+seurat_rds$celltype_assign[grep("BC$", seurat_rds$celltype_assign)] <- "BC"
+seurat_rds$celltype_assign[grep("GC$", seurat_rds$celltype_assign)] <- "RGC"
+
+
+DimPlot(seurat_rds, label = T, reduction = "tsne", group.by = "celltype_assign")
+levels_redefine <- c("AC", "HC", "BC", "Cone",
+										 "Rod", "RPE", "Muller glia", "RGC", "Astrocyte")
+
+levels_redefine <- c("AC", "HC", "BC", "Cone", "Rod", "Microglia", "Muller glia","RGC")
+
+seurat_rds$celltype_assign <- factor(seurat_rds$celltype_assign, levels = levels_redefine)
+seurat_rds@active.ident <- seurat_rds$celltype_assign
+
+saveRDS(seurat_rds, "monkey_retina.rds")
+
+
+setwd("5.figures")
+dir.create("20230315_replots")
+setwd("20230315_replots")
+##### clustering #####
+p1 <- DimPlot(seurat_rds, group.by = "celltype_assign", reduction = "tsne",label = T) 
+x<-ggplot_build(p1)
+info = data.frame(colour = x$data[[1]]$colour, group = x$data[[1]]$group)
+info <- unique((arrange(info, group)))
+cols <- as.character(info$colour)
+cols[c(6:8)] <- c("#00B9E3", "#619CFF", "#DB72FB")
+pdf("Clustering_seurat_monkey_retina_20230315.pdf", 6, 6)
+DimPlot(seurat_rds, group.by = "celltype_assign", reduction = "tsne",label = T, cols = cols) + NoLegend()
+dev.off()
+
+p1 <- VlnPlot(object = seurat_rds, features = c("nFeature_RNA", "nCount_RNA", 
+                                                 "percent.mt","percent.rb"), 
+ 						pt.size=0,  group.by = "celltype_assign", ncol = 4, 
+							cols = cols)
+
+saveRDS(p1,"monkey_qc_plot.rds")
+
+#### cell barplot #####
+cellnum <- as.data.frame(table(seurat_rds$celltype_assign, 
+                               seurat_rds$orig.ident))
+colnames(cellnum) <- c("celltype", "group", "Freq")
+
+percentageplot <- GeomcolWrap(plot_data = cellnum, 
+										x_group = cellnum$group, 
+										y_value = cellnum$Freq, fill_group = cellnum$celltype, 
+										fill_cols = cols, 
+										title_name = "Percent of Cells from each sample",
+										x_axis_name = "sample", y_axis_name = "Percent")
+ggsave("Cellpercentageplot_monkey_retina_20230315.pdf", percentageplot, width = 8, height = 8)
+write.xlsx(cellnum, "Cellpercentagetable_monkey_retina.xlsx", rowNames = T, colNames = T, overwrite = T)
+
+#### dotplot of markers and cluster based on top20 markers ####
+
+plots <- hclustBasedTop20marker(seurat_rds = seurat_rds, file_prefix = "monkey_retina",
+											 min_pct = 0.25, logfc_threshold = 0.25, p_val_adj = 0.05, mt_rb_pattern = "^Mt-|^Rpl|^Rps", top_num = 20,
+											 width_num = 10, height_num = 12)
+
+file_prefix <- "monkey_retina"
+pdf(paste0(file_prefix,"_cluster_dendrogram_ward_D2_top20_with_dotplotmarker.pdf"), 10, 15)
+print(plots)
+dev.off()
+
+```
+#### generate figures6 QC
+```{r generate qc figs as the sup Fig1B}
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/figure_sup")
+
+library(cowplot)
+library(ggplot2)
+zebrafish_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/zebrafish/5.figures/20230315_replots/zebrafish_qc_plot.rds")
+rat_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/rat/5.figures/20230315_replots/rat_qc_plot.rds")
+monkey_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/monkey/5.figures/20230315_replots/monkey_qc_plot.rds")
+
+plots <- plot_grid(zebrafish_p, rat_p, monkey_p, ncol = 1)
+
+ggsave(filename = "20230314_retina_sup_fig6_bigcellype.pdf", plot = plots, height = 13, width = 20)
+
+```
+
+### 3. celltype similarity anlysis
+```{sh celltype similarity anlysis}
+
+output="/home/zhengjh/projects/PinealGland/analysis/RetinaDataAnalysis/combine_zebrafish_GSE160140_and_ZCL_retina"
+species1_object="/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds" 
+species2_object="/home/zhengjh/projects/PinealGland/analysis/RetinaDataAnalysis/combine_zebrafish_GSE160140_and_ZCL_retina/final_combined_zebrafish_retina_seurat.rds"
+species1_marker="/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/4.MarkersInCluster/20221108_zebfrafish_pineal_gland_celltype__MarkersInClusters.csv"
+species2_marker="/home/zhengjh/projects/PinealGland/analysis/RetinaDataAnalysis/combine_zebrafish_GSE160140_and_ZCL_retina/5.figures/4.MarkersInCluster/combined_zebrafish_retina_MarkersInClusters.csv"
+species1_name="zebrafish_pinealgland"
+species2_name="ZCL_retina_bigcelltype"
+
+cal_cell_similarity.R -o $output --species1_object $species1_object --species2_object $species2_object --species1_marker $species1_marker --species2_marker $species2_marker --species1_name $species1_name --species2_name $species2_name
+
+#### pineal gland with retina big cell type
+
+### zebrafish
+source activate r403
+cd /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/zebrafish/6.celltypesimilarity
+nohup Rscript /home/zhengjh/scripts/celltypesimilarity/cal_cell_similarity.R -o "/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/zebrafish/6.celltypesimilarity" --species1_path "/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds" --species2_path /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/zebrafish/final_zebrafish_retina_seurat.rds	 --min_pct 0.25 --logfc_threshold 0.25 --species1_name "zebrafish_pinealgland" --species2_name "zebrafish_retina_bigcelltype" &
+
+### combined zebrafish data
+outputpath="/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/combine_zebrafish_GSE160140_and_ZCL_retina"
+species1_path="/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds" 
+species2_path="/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/combine_zebrafish_GSE160140_and_ZCL_retina/final_combined_zebrafish_retina_seurat.rds"
+
+Rscript /home/zhengjh/scripts/celltypesimilarity/cal_cell_similarity.R -o $outputpath --species1_path $species1_path --species2_path $species2_path --min_pct 0.25 --logfc_threshold 0.25 --species1_name "zebrafish_pinealgland" --species2_name "ZCL_retina_bigcelltype"
+
+source activate r403
+cd /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/combine_zebrafish_GSE160140_and_ZCL_retina/6.celltypesimilarity
+nohup sh run_celltypesimilarity_zebrafish_pinealgland_combined_retina_bigcelltype.sh > celltypsimiarity.output.txt 2>&1  &
+
+### ZCL retina data
+# outputpath="/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/eye_extract_retina_from_ZCL/6.celltypesimilarity"
+# species1_path="/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds" 
+# species2_path="/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/eye_extract_retina_from_ZCL/final_ZCL_zebrafish_retina_seurat.rds"
+
+# Rscript /home/zhengjh/scripts/celltypesimilarity/cal_cell_similarity.R -o $outputpath --species1_path $species1_path --species2_path $species2_path --min_pct 0.25 --logfc_threshold 0.25 --species1_name "zebrafish_pinealgland" --species2_name "ZCL_retina_bigcelltype"
+source activate r403
+nohup sh run_celltypesimilarity_zebrafish_pinealgland_ZCL_retina_bigcelltype.sh > celltypsimiarity.output.txt 2>&1  &
+
+### rat
+source activate r403
+cd /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/rat/6.celltypesimilarity
+nohup Rscript /home/zhengjh/scripts/celltypesimilarity/cal_cell_similarity.R -o "/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/rat/6.celltypesimilarity" --species1_path /home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds --species2_path /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/rat/rat_retina.rds		 --min_pct 0.25 --logfc_threshold 0.25 --species1_name "rat_pinealgland" --species2_name "rat_retina_bigcelltype" > pinealocyte_retina.log 2>&1 &
+
+### monkey
+source activate r403
+cd /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/monkey/6.celltypesimilarity
+nohup Rscript /home/zhengjh/scripts/celltypesimilarity/cal_cell_similarity.R -o "/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/monkey/6.celltypesimilarity" --species1_path /home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds --species2_path /home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/monkey/monkey_retina.rds	 --min_pct 0.25 --logfc_threshold 0.25 --species1_name "monkey_pinealgland" --species2_name "monkey_retina_bigcelltype" > pinealocyte_retina.log 2>&1 &
+
+```
+```{r plot celltype similarity gene}
+
+### zebrafish
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/combine_zebrafish_GSE160140_and_ZCL_retina/6.celltypesimilarity/")
+
+library(pheatmap)
+corr_rds <- readRDS("zebrafish_pinealgland_ZCL_retina_bigcelltype__celltype_pair_spearman_correlation.rds")
+
+plotdata <- as.matrix(corr_rds$corr.coeff)
+plotdata <- plotdata[grep("zebrafish_pinealgland_", rownames(plotdata)), grep("ZCL_retina_bigcelltype", rownames(plotdata))]
+
+plotdata <- plotdata[c("zebrafish_pinealgland_Rod-like photoreceptors", "zebrafish_pinealgland_Cone-like photoreceptors",
+												 "zebrafish_pinealgland_Neuron", "zebrafish_pinealgland_Retinal pigment epithelium-like",
+												 "zebrafish_pinealgland_Muller glia-like","zebrafish_pinealgland_Microglia", 
+												 "zebrafish_pinealgland_Endothelial", "zebrafish_pinealgland_VLMCs" ) ,]
+col1 <- colorRampPalette(c("darkblue", "white","darkred"))
+rownames(plotdata) <- gsub("zebrafish_pinealgland_", "", rownames(plotdata))
+colnames(plotdata) <- gsub("ZCL_retina_bigcelltype_", "", colnames(plotdata))
+write.csv(plotdata, paste( "zebrafish_pinealgland_","ZCL_retina_bigcelltype", "_celltype_pair_plotdata.csv", sep = "_"))
+
+pdf(paste( "zebrafish_pinealgland_", "ZCL_retina_bigcelltype", "_celltype_pair_correlation_heatmap.pdf", sep = "_"), 12, 12)
+pheatmap(plotdata, 
+				 colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+				 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+				 border_color='NA', cluster_cols = T,cluster_rows = F,clustering_method =  "single")
+dev.off()
+
+### rat
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/rat/6.celltypesimilarity/")
+
+library(pheatmap)
+corr_rds <- readRDS("rat_pinealgland_rat_retina_bigcelltype__celltype_pair_spearman_correlation.rds")
+
+plotdata <- as.matrix(corr_rds$corr.coeff)
+
+plotdata <- plotdata[grep("rat_pinealgland", rownames(plotdata)), grep("rat_retina_bigcelltype", rownames(plotdata))]
+
+rownames(plotdata) <- gsub("rat_pinealgland_", "", rownames(plotdata))
+colnames(plotdata) <- gsub("rat_retina_bigcelltype_", "", colnames(plotdata))
+plotdata <- plotdata[c("α-pinealocyte","β-pinealocyte","Astrocyte","Microglia", "Endothelial",  "VLMCs" ) ,]
+col1 <- colorRampPalette(c("darkblue", "white","darkred"))
+rownames(plotdata) <- gsub("rat_pinealgland", "", rownames(plotdata))
+colnames(plotdata) <- gsub("rat_retina_bigcelltype", "", colnames(plotdata))
+write.csv(plotdata, paste( "rat_pinealgland","rat_retina_bigcelltype", "celltype_pair_plotdata.csv", sep = "_"))
+
+pdf(paste( "rat_pinealgland", "rat_retina_bigcelltype", "celltype_pair_correlation_heatmap.pdf", sep = "_"), 12, 12)
+pheatmap(plotdata, 
+				 colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+				 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+				 border_color='NA', cluster_cols = T,cluster_rows = F,clustering_method =  "ward.D2")
+dev.off()
+
+### monkey
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230312_figure6_retina/monkey/6.celltypesimilarity/")
+
+library(pheatmap)
+corr_rds <- readRDS("monkey_pineal_monkey_retina__celltype_pair_spearman_correlation.rds")
+
+plotdata <- as.matrix(corr_rds$corr.coeff)
+
+plotdata <- plotdata[grep("monkey_pineal", rownames(plotdata)), grep("monkey_retina", rownames(plotdata))]
+
+rownames(plotdata) <- gsub("monkey_pineal_", "", rownames(plotdata))
+colnames(plotdata) <- gsub("monkey_retina_", "", colnames(plotdata))
+plotdata <- plotdata[c("Pinealocyte","Neuron","Astrocyte", "Microglia", "Cycling cell", 
+											 "Oligodendrocyte1", "Oligodendrocyte2", "VLMCs") ,]
+col1 <- colorRampPalette(c("darkblue", "white","darkred"))
+rownames(plotdata) <- gsub("monkey_pineal_", "", rownames(plotdata))
+colnames(plotdata) <- gsub("monkey_retina_", "", colnames(plotdata))
+write.csv(plotdata, paste( "monkey_pineal","monkey_retina", "celltype_pair_plotdata.csv", sep = "_"))
+
+pdf(paste( "monkey_pineal", "monkey_retina", "celltype_pair_correlation_heatmap.pdf", sep = "_"), 12, 12)
+pheatmap(plotdata, 
+				 colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+				 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+				 border_color='NA', cluster_cols = T,cluster_rows = F,clustering_method =  "ward.D2")
+dev.off()
+```
+
+### 4.TF analysis
+
+### 5. GPCR analysis
+#### GeneratePseudocellSeuratObject
+```{sh GeneratePseudocellSeuratObject}
+zebrafish_data_path="/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds"
+rat_data_path="/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds"
+monkey_data_path="/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds"
+outputpath="/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/PseudocellSeurat"
+cd ${outputpath}
+echo ${zebrafish_data_path}
+
+
+echo "zebrafish_data_path="/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds"
+rat_data_path="/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds"
+monkey_data_path="/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds"
+outputpath="/home/zhengjh/projects/PinealGland/analysis/20221222_GPCRAnalysis/"
+source activate r403
+/home/zhengjh/scripts/seurat/pipeline/generate_pseudo_object.r -o ${outputpath} --seuratobjectpath ${zebrafish_data_path} --prefix "20221224_zebrafish" 
+/home/zhengjh/scripts/seurat/pipeline/generate_pseudo_object.r -o ${outputpath} --seuratobjectpath ${rat_data_path} --prefix "20221224_rat"
+/home/zhengjh/scripts/seurat/pipeline/generate_pseudo_object.r -o ${outputpath} --seuratobjectpath ${monkey_data_path} --prefix "20221224_monkey"
+" > runPseudoCellSeurat.sh 
+
+nohup sh runPseudoCellSeurat.sh 2>&1 >output.txt &
+
+
+## rat night 数据作为补充
+generate_pseudo_object.r -o ~/projects/PinealGland/snakemake/data  --seurat_object_path ~/projects/PinealGland/snakemake/data/rat_night_pineal_select_celtype.rds --filelabel "rat_night"
+
+```
+```{r retina GPCRs}
+rm(list = ls())
+
+### 1. check the GPCR list
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230323_figure4_gpcr")
+gpcr_list <- readRDS("/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds")
+
+speciesname <- c("zebrafish", "rat", "monkey")
+singledata_path <- list(zebrafish = "/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_retina.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/snakemake/data/rat_retina.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/snakemake/data/monkey_retina.rds")
+
+pseudodata_path <- list(zebrafish = "/home/zhengjh/projects/PinealGland/snakemake/data/zebrafish_retina.PseudoCell.seurat.rds",
+									 rat = "/home/zhengjh/projects/PinealGland/snakemake/data/rat_retina.PseudoCell.seurat.rds",
+									 monkey = "/home/zhengjh/projects/PinealGland/snakemake/data/monkey_retina.PseudoCell.seurat.rds")
+
+gpcrindex_name <- list(zebrafish = "Gene.Symbol.(Zebrafish)",
+											 rat = "Gene.Symbol.(Rat)",
+											 monkey = "Gene.Symbol(Crab-eating.monkey)")
+
+celltype_info <- list(zebrafish =  c("Rod-like photoreceptors", "Cone-like photoreceptors",
+																			"Retinal pigment epithelium-like","Muller glia-like" , 
+																			"Microglia", "Neuron", "VLMCs", "Endothelial"),
+											rat =  c("α-pinealocyte", "β-pinealocyte",  "Astrocyte", "Microglia",  "VLMCs", "Endothelial"),
+											monkey =  c("Pinealocyte", "Astrocyte", "Microglia", "Cycling cell", "Neuron", 
+											 						"Oligodendrocyte1", "Oligodendrocyte2", "VLMCs"))
+
+col_info <- list(zebrafish = c("#80B1D3", "#FDB462", "#76C4C4", "#FB8072", "#BEBADA", "#FCCDE5", "#8DD3C7", "#FFED6F"),
+								 rat = c("#FDB462", "#80B1D3",  "#FB8072","#BEBADA",  "#8DD3C7", "#FFED6F"),
+								 monkey = c("#80B1D3", "#FB8072", "#BEBADA", "#B3DE69", "#FCCDE5", "#FFED6F", "#FDB462", "#8DD3C7"))
+
+num <- list()
+gpcrnames <- list()
+
+
+for (i in speciesname){
+	print(i)
+	
+	### 1。read in data
+	seurat_rds <- readRDS(singledata_path[[i]])
+	#seurat_rds <- ScaleData(seurat_rds, features = rownames(seurat_rds))
+	#print(table(seurat_rds@active.ident))
+  DefaultAssay(seurat_rds) <- "RNA"
+ 
+	gpcr_list_species <- gpcr_list[gpcr_list$group == gpcrindex_name[[i]], ]
+	intersect_genename <- intersect(gpcr_list_species$genename, rownames(seurat_rds))
+	print(length(intersect_genename))
+  
+	gpcr_list_species <- gpcr_list_species[gpcr_list_species$genename %in% intersect_genename, ]		
+	gpcr_list_species <- gpcr_list_species[!duplicated(gpcr_list_species$genename), ]	
+  
+	gpcrnames[[i]] <- gpcr_list_species
+	
+  num[[i]] <- as.data.frame(table(gpcr_list_species$Family, gpcr_list_species$Class))
+  colnames(num[[i]]) <- c("Family", "Subclass", "Num")
+  index <- num[[i]]$Num!=0
+  num[[i]] <- num[[i]][index, ]
+}	
+
+write.xlsx(num, "20230323_retina_GPCRnumber_count.xlsx", colNames = T, rowNames = T)
+write.xlsx(gpcrnames, "20230323_retina_gpcrnames.xlsx", colNames = T, rowNames = T)
+
+
+### 看下三个物种gpcr的交集
+gpcr_list <- list()
+for (i in getSheetNames("20230323_pineal_retina_gpcrnames.xlsx")){
+	gpcr_list[[i]] <- read.xlsx("20230323_pineal_retina_gpcrnames.xlsx", sheet = i)$ratname
+	gpcr_list[[i]] <- unique(na.omit(gpcr_list[[i]]))
+}
+
+pdf("20230323_pineal_retina_GPCR_upsetR.pdf", width = 12, height = 8)
+upset(fromList(gpcr_list),  order.by = "freq", nsets = length(gpcr_list))
+dev.off()
+
+library(RColorBrewer)
+p = venn.diagram(
+  x = gpcr_list,
+  category.names = names(gpcr_list),
+  # filename = 'venn.png',
+  filename = NULL,
+  output=TRUE,
+  fill = brewer.pal(6, "Set2"),
+  col = brewer.pal(6, "Set2"),
+  fontface = "bold",
+  cat.col = brewer.pal(6, "Set2"),
+  cat.fontface = "bold"
+)
+pdf("20230323_retina_GPCR_Venn_combine.pdf")
+grid.draw(p)
+dev.off()
+
+### 获取交集基因列表
+library(VennDiagram)
+inter <- get.venn.partitions(gpcr_list)
+for (j in 1:nrow(inter)) inter[j,'values'] <- paste(inter[[j,'..values..']], collapse = ', ')
+write.xlsx(inter, "20230323_pineal_retina_GPCR_Venn_combine_intersect_analysis.xlsx",  colNames = T, rowNames = T)
+
+
+#### cell type GPCR
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230323_figure4_gpcr")
+
+GenerateTopGPCRScaleData <- function(seurat_object, gpcr_markers){
+	
+	#p1 <- DoHeatmap(seurat_object, features = gpcr_markers$gene)
+	#gene_order <- rev(levels(p1$data$Feature))
+	
+	unique_gpcr_markers <- dplyr::select(gpcr_markers, c("gene", "Family"))
+	unique_gpcr_markers <- unique_gpcr_markers[!duplicated(unique_gpcr_markers$gene), ]
+	#unique_gpcr_markers <- unique_gpcr_markers[gene_order, ]
+	
+	## gcpr scale data
+	gpcr_data <- as.matrix(seurat_object@assays$RNA@scale.data[unique_gpcr_markers$gene, ])
+	
+  ## annotation_col information
+	cat("Generate the annotation_col used in heatmap and sort the cellnames based on celltype_level\n")
+	celltype_levels <- levels(seurat_object@active.ident)
+	annotation_col = data.frame( celltype = seurat_object@active.ident)
+	rownames(annotation_col) <- colnames(seurat_object)
+	annotation_col <- dplyr::arrange(annotation_col, celltype)
+	
+	cat("Reorder gpcr_data based on annotation_col", "\n")
+	gpcr_data <- gpcr_data[, rownames(annotation_col)]
+	
+	cat("Check the colnames of gpcr_data is the same as rownames of annotation_col:", "\n")
+	print(all.equal(colnames(gpcr_data), rownames(annotation_col)))
+	
+	## annotation_row information
+	cat("Generate the annotation_row used in heatmap", "\n")
+	annotation_row = data.frame(gpcr_family = unique_gpcr_markers$Family)
+	rownames(annotation_row) <- unique_gpcr_markers$gene
+	cat("Check the rownames of gpcr_data is the same as rownames of annotation_row:",  "\n")
+	print(all.equal(rownames(gpcr_data), rownames(annotation_row)))
+	
+	### anno colors information
+	cat("Generate the ann_colors used in heatmap", "\n")
+	getPalette <- colorRampPalette(RColorBrewer::brewer.pal(10, "Paired"))
+	colorCount <- length(celltype_levels)
+	col_celltype <- getPalette(colorCount)
+	names(col_celltype) <- celltype_levels
+	
+	getPalette <- colorRampPalette(RColorBrewer::brewer.pal(8, "Accent"))
+	colorCount<- length(sort(unique(unique_gpcr_markers$Family)))
+	col_gpcr_family<- getPalette(colorCount)
+	names(col_gpcr_family) <- sort(unique(unique_gpcr_markers$Family))
+	# Set3; Set2; Set1; Pastel2; Pastel1; Paired; Dark2; Accent
+	
+	ann_colors = list(celltype = col_celltype, gpcr_family = col_gpcr_family)
+	
+	heatmap_input <- list(plot_data = gpcr_data, annotation_col = annotation_col, 
+												annotation_row = annotation_row, ann_colors = ann_colors)
+	
+}
+
+
+path <- "/home/zhengjh/projects/PinealGland/snakemake/data/"
+
+seurat_path <- list(zebrafish = paste0(path, "zebrafish_retina.PseudoCell.seurat.rds"),
+										rat = paste0(path, "rat_retina.PseudoCell.seurat.rds"),
+										monkey = paste0(path, "monkey_retina.PseudoCell.seurat.rds"))
+
+markers_files <- list(zebrafish = "/home/zhengjh/projects/PinealGland/analysis_downstream/zebrafish_retina/CellGPCR/celltype_gpcr_markers_.csv",
+											rat = "/home/zhengjh/projects/PinealGland/analysis_downstream/rat_retina/CellGPCR/celltype_gpcr_markers_.csv",
+											monkey = "/home/zhengjh/projects/PinealGland/analysis_downstream/monkey_retina/CellGPCR/celltype_gpcr_markers_.csv")
+
+cellselected <- list(zebrafish =  c("Cone", "Rod", "RPE", "Muller glia", "AC", "BC", "HC", "RGC", "Astrocyte"),
+										 rat = c("Cone", "Rod", "Muller glia", "AC", "BC", "AC/HC",  "Microglia", "Endothelial", "Pericyte"),
+										 monkey = c("Cone", "Rod", "Muller glia", "AC", "BC", "HC", "RGC", "Microglia"))
+
+cellselected_gpcr <- list(zebrafish =  c("Cone", "Rod", "RPE", "Muller glia", "AC", "BC", "HC", "RGC", "Astrocyte"),
+										 rat = c("Cone", "Rod", "Muller glia", "AC", "BC", "AC/HC",  "Microglia", "Endothelial", "Pericyte"),
+										 monkey = c("Cone", "Rod", "Muller glia", "AC", "BC", "HC", "RGC", "Microglia"))
+
+col_info <- list(zebrafish = c( "#00BA38", "#00C19F", "#00B9E3", "#619CFF", "#F8766D", "#93AA00", "#D39200", "#DB72FB", "#FF61C3"),
+								 rat = c("#00BA38", "#00C19F", "#619CFF", "#F8766D", "#93AA00", "#D39200", "#00B9E3", "#DB72FB", "#FF61C3"),
+								 monkey = c("#00BA38", "#00C19F", "#619CFF", "#F8766D", "#93AA00", "#D39200",  "#DB72FB", "#00B9E3" ))
+gpcr_list <- readRDS("/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds")
+speciesname <- c("zebrafish", "rat", "monkey")
+gpcr_table <- list()
+plot_list <- list()
+for (i in 1:3){
+	temp <- read.csv(markers_files[[i]], row.names = 1)
+	temp <- as.data.frame(temp)
+	index <- temp$cluster %in%  cellselected_gpcr[[i]]
+	gpcr_markers <- temp[index, ]
+	gpcr_markers$cluster <- factor(as.character(gpcr_markers$cluster), levels = cellselected_gpcr[[i]])
+	gpcr_markers <- arrange(gpcr_markers, cluster)
+	gpcr_table[[i]] <- gpcr_markers
+	seurat_rds <- readRDS(seurat_path[[i]])
+	seurat_rds <- subset(seurat_rds, idents = cellselected[[i]])
+	seurat_rds <- ScaleData(seurat_rds, features = rownames(seurat_rds))
+	levels(seurat_rds) <- cellselected[[i]]
+	heatmap_input <- GenerateTopGPCRScaleData(seurat_rds, gpcr_markers, cellselected[[i]], col_info[[i]])
+	p_pse <- pheatmap::pheatmap(heatmap_input$plot_data, #fontsize_row=3,
+									 color=colorRampPalette(c("navy", "white", "firebrick3"))(50),
+									 breaks=seq(-1, 1, length.out = 50),
+									 treeheight_row=10, treeheight_col=2,border_color='grey',
+									 cluster_cols = F,cluster_rows = F,fontsize_row = 18,
+									 annotation_col = heatmap_input$annotation_col,
+									 annotation_row = heatmap_input$annotation_row,
+									 annotation_colors = heatmap_input$ann_colors,
+									 show_colnames = F,scale='none',
+									 border=TRUE,
+									 clustering_method = "complete",
+									 main = paste(i, "pseudocellsize_10", sep = "_"), legend = F)
+  p_pse <- as.grob(p_pse)
+  plot_list[[i]] <- p_pse
+}
+
+names(gpcr_table) <- speciesname
+names(plot_list) <- speciesname
+
+write.xlsx(gpcr_table, "20230324_retina_gpcrs.xlsx", colNames = T, rowNames = T)
+plots <- plot_grid(plotlist = plot_list, ncol = 3, rel_widths = c(1.9, 1.5, 1.5))
+ggsave(filename = "20230324_retina_GPCR_heatmap_allcells.pdf", plot = plots, width = 24, height = 20)
+
+#### cone, rod, RPE and muller glia
+cellselected <- list(zebrafish =  c("Cone", "Rod", "RPE", "Muller glia"),
+										 rat = c("Cone", "Rod", "Muller glia"),
+										 monkey = c("Cone", "Rod", "Muller glia"))
+
+cellselected_gpcr <- list(zebrafish =  c("Cone", "Rod", "RPE", "Muller glia"),
+										 rat = c("Cone", "Rod", "Muller glia"),
+										 monkey = c("Cone", "Rod", "Muller glia"))
+
+col_info <- list(zebrafish = c( "#00BA38", "#00C19F", "#00B9E3","#619CFF"),
+								 rat = c("#00BA38", "#00C19F", "#619CFF"),
+								 monkey = c("#00BA38", "#00C19F", "#619CFF"))
+gpcr_list <- readRDS("/home/zhengjh/projects/PinealGland/data/GPCRdatabase/Final_Used_GPCR_Human_Mouse_Rat_CrabeatingMonkey_Zebrafish_Table_221222.rds")
+speciesname <- c("zebrafish", "rat", "monkey")
+gpcr_table <- list()
+plot_list <- list()
+for (i in 1:3){
+	temp <- read.csv(markers_files[[i]], row.names = 1)
+	temp <- as.data.frame(temp)
+	index <- temp$cluster %in%  cellselected_gpcr[[i]]
+	gpcr_markers <- temp[index, ]
+	gpcr_markers$cluster <- factor(as.character(gpcr_markers$cluster), levels = cellselected_gpcr[[i]])
+	gpcr_markers <- arrange(gpcr_markers, cluster)
+	gpcr_table[[i]] <- gpcr_markers
+	seurat_rds <- readRDS(seurat_path[[i]])
+	seurat_rds <- subset(seurat_rds, idents = cellselected[[i]])
+	seurat_rds <- ScaleData(seurat_rds, features = rownames(seurat_rds))
+	levels(seurat_rds) <- cellselected[[i]]
+	heatmap_input <- GenerateTopGPCRScaleData(seurat_rds, gpcr_markers, cellselected[[i]], col_info[[i]])
+	p_pse <- pheatmap::pheatmap(heatmap_input$plot_data, #fontsize_row=3,
+									 color=colorRampPalette(c("navy", "white", "firebrick3"))(50),
+									 breaks=seq(-1, 1, length.out = 50),
+									 treeheight_row=10, treeheight_col=2,border_color='grey',
+									 cluster_cols = F,cluster_rows = F,fontsize_row = 18,
+									 annotation_col = heatmap_input$annotation_col,
+									 annotation_row = heatmap_input$annotation_row,
+									 annotation_colors = heatmap_input$ann_colors,
+									 show_colnames = F,scale='none',
+									 border=TRUE,
+									 clustering_method = "complete",
+									 main = paste(i, "pseudocellsize_10", sep = "_"), legend = F)
+  p_pse <- as.grob(p_pse)
+  plot_list[[i]] <- p_pse
+}
+
+names(gpcr_table) <- speciesname
+names(plot_list) <- speciesname
+write.xlsx(gpcr_table, "20230324_retina_gpcrs_cone_rod_rpe_muller.xlsx", colNames = T, rowNames = T)
+plots <- plot_grid(plotlist = plot_list, ncol = 3, rel_widths = c(1.5, 1.5, 1.5))
+ggsave(filename = "20230324_retina_GPCR_heatmap_cone_rod_rpe_muller.pdf", plot = plots, width = 24, height = 10)
+
+
+
+##### 看下MTNR1B 一级 MTNR1A表达
+
+path <- "/home/zhengjh/projects/PinealGland/snakemake/data/"
+seurat_path <- list(zebrafish_pineal = paste0(path, "zebrafish_pineal.rds"),
+										rat_pineal = paste0(path, "rat_pineal.rds"),
+										monkey_pineal = paste0(path, "monkey_pineal.rds"),
+										zebrafish_retina = paste0(path, "zebrafish_retina.rds"),
+										rat_retina = paste0(path, "rat_retina.rds"),
+										monkey_retina = paste0(path, "monkey_retina.rds"))
+
+features_plot <- list(zebrafish_pineal = c("mtnr1c", "mtnr1aa", "mtnr1al", "mtnr1ab"))
+
+```

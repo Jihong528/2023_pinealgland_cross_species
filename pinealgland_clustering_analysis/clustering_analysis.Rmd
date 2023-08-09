@@ -1,0 +1,3004 @@
+---
+title: "Pinealgland_clustering_analysis"
+author: "Jihong Zheng"
+date: "2022-10-21"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Pineal gland data collecting, processing and analysis
+## Zebrafish
+### First clustering analysis
+```{r Seurat Analysis, echo = FALSE, message=FALSE}
+###### a. Read Data  #########
+scseq1_path <- "/Users/zhengyiyi/Desktop/AJI/Other/PinealGland/DataDowload/Zebrafish_GSE123778_RAW/GSM3511192_scSeq1/"
+scseq1_exp <- Read10X(data.dir = scseq1_path)
+print(dim(scseq1_exp))  #35127 gene * 1594 cell
+colnames(scseq1_exp) <- paste("scseq1_exp_", colnames(scseq1_exp), sep = "_")
+
+scseq2_path <- "/Users/zhengyiyi/Desktop/AJI/Other/PinealGland/DataDowload/Zebrafish_GSE123778_RAW/GSM3511193_scSeq2/"
+scseq2_exp  <- Read10X(scseq2_path)
+print(dim(scseq2_exp))  #35127 gene * 3057 cell
+colnames(scseq2_exp) <- as.vector(paste("scseq2_exp_", colnames(scseq2_exp), sep = "_"))
+
+all.equal(rownames(scseq1_exp), rownames(scseq2_exp))
+exp_count <- cbind(scseq1_exp, scseq2_exp)
+dim(exp_count) # 35127 gene * 4651 cell
+
+pr_name <- "scRNA-seq zebrafish data Analysis"
+min_cell <- 3 # filter gene:  expressed in at least 3 cells.
+Or_ident <- c(rep("scseq1", ncol(scseq1_exp)), 
+              rep("scseq2", ncol(scseq2_exp)))
+table(Or_ident)
+# scseq1 scseq2 
+# 1594   3057 
+rm(scseq1_exp, scseq1_path, scseq2_exp, scseq2_path)
+
+###### b. Construct Seuart object  #####
+mt_pattern<-"^mt-"
+rp_pattern<-"^rpl|^rps"
+Aggregated_seurat <- Create_seurat_filter_cell(exp_count,pr_name,
+                                               min_cell,Or_ident,
+                                               mt_pattern,rp_pattern)
+
+dim(Aggregated_seurat) # 22260 gene * 4651 cell
+print(levels(Aggregated_seurat$orig.ident)) 
+Aggregated_seurat$orig.ident <- factor(as.character(Aggregated_seurat$orig.ident),
+                                       levels = c("scseq1", "scseq2"))
+
+print(levels(Aggregated_seurat$orig.ident)) 
+table(Aggregated_seurat$orig.ident) 
+# scseq1 scseq2 
+# 1594   3057
+
+###### c. Quality Control #####
+# QC 
+QC <- function(exp_count.seurat,name_pre){
+  folder_name="1.QC"
+  if (file.exists(folder_name)){
+    print("1.QC existed.")
+  }
+  else{
+    dir.create(folder_name)
+  } 
+  
+  file_name=paste(name_pre,"Violinplot.pdf",sep="_")
+  pdf(file = file_name, height = 10, width = 20)
+  print(VlnPlot(object = exp_count.seurat, features = c("nFeature_RNA", "nCount_RNA","percent.mt","percent.rp"),
+                ncol = 2,pt.size=0, group.by = "orig.ident")) 
+  plot1=FeatureScatter(object = exp_count.seurat, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+  plot2=FeatureScatter(object = exp_count.seurat, feature1 = "nCount_RNA", feature2 = "percent.mt")
+  plot3=FeatureScatter(object = exp_count.seurat, feature1 = "nCount_RNA", feature2 = "percent.rp")
+  print(CombinePlots(plots=list(plot1,plot2,plot3),ncol=3))
+  dev.off()
+  #copy files to 1.QC
+  result_files <- c(file_name)
+  file.copy(result_files, folder_name ,overwrite = T)
+  file.remove(result_files) 
+  print("Based on the Violin plot, you can filter the cell by the nFeature_RNA ,nCount_RNA and/or  percent.mt")
+}
+
+QC(Aggregated_seurat, "scRNA-seq zebrafish data Analysis")
+
+
+Aggregated_seurat <- subset(Aggregated_seurat, nFeature_RNA > 200
+                            & percent.mt < 20 & percent.rp < 40 & nCount_RNA < 15000)
+dim(Aggregated_seurat)  # 22260 gene *  3350 cell
+table(Aggregated_seurat$orig.ident) # scseq1(1089) scseq2(2261)   
+
+###### d. select pc number  #####
+condition <- "scRNA-seq zebrafish data Analysis"
+npc_plot <- 100
+Aggregated_seurat <- Select_pc(Aggregated_seurat,condition,npc_plot)
+
+###### e. remove batch effect and identify celltype #######
+
+###### harmony ######
+DefaultAssay(Aggregated_seurat) <- "RNA"
+Aggregated_seurat <- NormalizeData(Aggregated_seurat, normalization.method = "LogNormalize",
+                                   scale.factor = 10000)
+Aggregated_seurat <- FindVariableFeatures(Aggregated_seurat, selection.method = "vst", nfeatures = 3000)
+Aggregated_seurat <- ScaleData(Aggregated_seurat)
+
+# Eliminate batch effects with harmony and cell classification
+Aggregated_seurat <- RunPCA(Aggregated_seurat, pc.genes = Aggregated_seurat@var.genes, 
+                            npcs = 30, verbose = FALSE)
+options(repr.plot.height = 2.5, repr.plot.width = 6)
+library(harmony)
+Aggregated_seurat <- Aggregated_seurat %>% RunHarmony("orig.ident", plot_convergence = TRUE)
+
+Aggregated_seurat <- Aggregated_seurat %>% 
+  RunTSNE(reduction = "harmony", dims = 1:15) %>% 
+  RunUMAP(reduction = "harmony", dims = 1:15) %>% 
+  FindNeighbors(reduction = "harmony", dims = 1:15) %>% 
+  FindClusters(resolution = 0.5) %>% 
+  identity()
+
+new.cluster.ids <- as.numeric(levels(Aggregated_seurat)) + 1
+names(new.cluster.ids) <- levels(Aggregated_seurat)
+Aggregated_seurat <- RenameIdents(Aggregated_seurat, new.cluster.ids)
+
+DimPlot(Aggregated_seurat, reduction = "tsne", group.by = "ident", 
+        label = T, split.by = "orig.ident")
+
+#### topmarker of each cluster
+DefaultAssay(Aggregated_seurat) <- "RNA"
+
+condition <- paste0("scRNA-seq zebrafish data Analysis", "resolution_", 0.5)
+Cluster_markers <- FindmarkerForCluster(Aggregated_seurat, condition)
+
+condition <- "scRNA-seq zebrafish data Analysis"
+top_num <- 20
+TopMarkersInClusters <- TopMarkersInCluster(Cluster_markers,condition,top_num)
+
+###### f.Identify final celltype #########
+# vascular and leptomeningeal cells (VLMCs)
+Aggregated_seurat$seurat_clusters <- Aggregated_seurat@active.ident
+celltype <- c("Rod-like photoreceptors", "Rod-like photoreceptors", 
+              "Retinal pigment epithelium-like", "Muller glia-like",
+              "VLMCs", "Macrophages/ Microglia",
+              "Retinal pigment epithelium-like", "Neuron",
+              "Cone-like photoreceptors", "Habenula",
+              "Endothelial", "Removed")
+
+new.cluster.ids <- celltype
+names(new.cluster.ids) <- levels(Aggregated_seurat)
+Aggregated_seurat <- RenameIdents(Aggregated_seurat, new.cluster.ids)
+
+Aggregated_seurat$celltype_assign <- Aggregated_seurat@active.ident
+DimPlot(Aggregated_seurat, group.by = "celltype_assign", reduction = "tsne",
+        label = T) + NoLegend()
+
+#### remove cluster 12, because I don't know which is it, and I remove Habenula cells
+Aggregated_seurat <- subset(Aggregated_seurat, ident = c("Removed", "Habenula"), 
+                            invert = T)
+DimPlot(Aggregated_seurat, group.by = "ident", reduction = "tsne",
+        label = T) + NoLegend()
+levels_define <- c("Rod-like photoreceptors", "Cone-like photoreceptors",
+                   "Retinal pigment epithelium-like",
+                   "Muller glia-like" , "Macrophages/ Microglia","Neuron" ,
+                   "VLMCs", "Endothelial")
+Aggregated_seurat$celltype_assign <- factor(as.character(Aggregated_seurat$celltype_assign),
+                                            levels = levels_define)
+Aggregated_seurat@active.ident <- Aggregated_seurat$celltype_assign
+
+#### rerun top marker of each cluster
+condition <- "20220530_zebfrafish_pineal_gland_celltype_"
+Cluster_markers <- FindmarkerForCluster(Aggregated_seurat, condition)
+
+condition <- "20220530_zebfrafish_pineal_gland_celltype_"
+top_num <- 20
+TopMarkersInClusters <- TopMarkersInCluster(Cluster_markers,condition,top_num)
+
+saveRDS(Aggregated_seurat, "20220530_Zebrafish_pineal_gland.rds")
+
+```
+
+### generate Sup Fig 1A/B
+```{r  Generate Figs 1A/B echo = FALSE, message=FALSE}
+###### g. generate Supplementary Figure 1A/1B ##########
+
+### clustering ####
+pdf("20220530_zebrafish_pineal_gland_scRNA_seq_clustering.pdf", 8, 8)
+DimPlot(Aggregated_seurat, group.by = "celltype_assign", reduction = "tsne",
+        label = T) + NoLegend()
+dev.off()
+
+#### cell barplot #####
+cellnum <- as.data.frame(table(Aggregated_seurat$celltype_assign, 
+                               Aggregated_seurat$orig.ident))
+
+
+plot_data <- data.frame(cellnum = cellnum$Freq,
+                        cellpercentage = c(cellnum$Freq[1:8]/sum(cellnum$Freq[1:8]),
+                                           cellnum$Freq[9:16]/sum(cellnum$Freq[9:16])),
+                        group = cellnum$Var2,
+                        celltype = cellnum$Var1)
+plot_data$cellpercentage <- plot_data$cellpercentage * 100
+
+plot_data$celltype <- factor(plot_data$celltype ,
+                             levels = levels(Aggregated_seurat$celltype_assign))
+
+write.xlsx(plot_data, "20220530_zebrafish_pinealgland_cellpercentage.xlsx", 
+           rowNames = T, colNames = T, overwrite = T)
+
+
+library(ggplot2)
+
+p <- ggplot(plot_data, aes(x=group,y=cellpercentage,fill=celltype)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_classic() 
+p1 <- p + theme(axis.text.x = element_text(size = 5, color = "black", face="bold"),
+                axis.text.y = element_text(size = 5, color = "black", face="bold"))
+p1 <- p1 + ggtitle("zebrafish pinealgland") 
+p1 <- p1 + theme(plot.title = element_text(hjust = 0.5))
+p1 <- p1 + theme(plot.title = element_text(size = 10))
+p1 <- p1 + xlab("") + ylab("Percentage of celltype")
+p1 <- p1 + theme(axis.title.x = element_text(size = 10)) # x轴字体大小
+p1 <- p1 + theme(axis.title.y = element_text(size = 10)) # y轴字体大小
+#p1 <- p1 + scale_fill_manual(values=col1)
+p1 <- p1 + scale_y_continuous(limits=c(0, 100), breaks=seq(0,100,25), 
+                              expand = c(0,0))
+
+pdf("220530_zebrafish_pinealgland_cellpercentage_barplot.pdf", 6, 6)
+p1
+dev.off()
+
+
+#### Use top 20 markers to generate cluster dendrogram #####
+Variable_gene <- unique(TopMarkersInClusters$gene)
+
+hclust_exp <- t(Aggregated_seurat@assays$RNA@data[Variable_gene, ])
+
+hclust_exp_mean <- aggregate(hclust_exp,  
+                             by = list(celltype = as.character(Aggregated_seurat$celltype_assign)), 
+                             mean)
+
+celltypenames <- hclust_exp_mean$celltype
+hclust_exp_mean <- hclust_exp_mean[, -1]
+rownames(hclust_exp_mean) <- celltypenames
+
+library(factoextra)
+library(igraph)
+bc.scaled <- scale(hclust_exp_mean)
+d <- dist(bc.scaled)
+fit1 <- hclust(d, method = "ward.D2")
+plot(fit1,hang = -1,cex=.8,main = "title")
+
+p2 <- fviz_dend(fit1, k=4, rect =T, rect_fill = T,horiz = TRUE,
+                rect_border = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"))
+
+plots <- plot_grid(p2, p_dotplot, ncol = 2, rel_widths = c(0.8,2))
+
+pdf("20220719_pineal_gland_cluster_dendrogram_ward_D2_variabel_gene_3000_with_dotplotmarker.pdf", 10, 8)
+plots
+dev.off()
+
+#### dotplot of markers ####
+markers <- c("asip2b", "stra6", "rpe65a", "rdh5",
+             "rbp1", "slc13a1", "vim", "dkk3b",
+             "dcn", "pmp22a", "cldn11a", "sost", 
+             "cldn5b", "flt1", "sox7", "aplnra",
+             "ctss2.1", "ctss2.2", "cd74a", "cd74b",
+             "exorh", "gnat1", "gngt1", "rcvrnb",
+             "gnat2", "gngt2a", "gnb3b", "opn1lw1",
+             "bdnf", "elavl3", "vgf", "snap25a")
+
+levels_define <- rev(c("Retinal pigment epithelium-like",  "Muller glia-like",
+                       "VLMCs", "Endothelial", "Macrophages_Microglia", 
+                       "Rod-like photoreceptors", "Cone-like photoreceptors",
+                       "Neuron"))
+
+
+TopMarkersInClusters$celltype_assign <- factor(as.character(TopMarkersInClusters$celltype_assign),
+                                        levels = levels_define)
+p_dotplot <- DotPlot(TopMarkersInClusters, features = markers,
+                     group.by = "celltype_assign",
+                     col.min = 0, col.max = 2)
+p_dotplot <- p_dotplot #+ coord_flip()
+p_dotplot <- p_dotplot + scale_colour_gradient2(low = "lightgrey",high = "Red",
+                                                midpoint = 1,breaks=c(0, 1, 2), label = c(0, 1, 2))
+p_dotplot <- p_dotplot + theme(axis.text.x = element_text(size = 10,
+                                                          vjust = 0.5, hjust = 0.5, angle = 45))
+p_dotplot <- p_dotplot + theme(axis.text.y = element_blank(), axis.title.y = element_blank(),
+                               axis.title.x = element_blank() )
+p_dotplot <- p_dotplot + NoLegend()
+ggsave("20220708_pineal_gland_celltypemarker_DotPlot.pdf", 
+       plot = p_dotplot, width = 10, height = 9)
+
+```
+### reanalysis: rm cells expressed gh1
+```{r Seurat pipeline dataquality Analysis, echo = FALSE, message=FALSE}
+
+## linux run MultipleDataQualityOverview.R code
+rm(list = ls())
+path <- '/home/zhengjh/other/PinealGland/Results/Zebrafish'
+knitr::opts_chunk$set(eval=TRUE, #在块中运行代码(default = TRUE)
+                      highlight = T, #高亮显示
+                      echo = F, #是否在输出中包含源代码
+                      tidy=TRUE,#是否整理代码
+                      error = T, #是否在输出中包含错误信息
+                      warning = F, #是否在输出中包含警告(default = TRUE)
+                      message  = F, #是否在输出中包含参考的信息
+                      cache=F)
+knitr::opts_knit$set(root.dir = path)
+
+seurat_rds <- readRDS("zebrafish_scRNAseq_analysis_multiple_dataquality_overview_seurat.rds")
+
+VlnPlot(seurat_rds, features = "gh1")
+
+pituitary_marker <- c("crhr1", "gh1", "ghrhra", "ghrhrb", "ghrhrl",
+                      "prl", "tshba", "trhra", "trhrb", "lhb", "fshb", "pomca", "pomcb")
+
+pituitary_marker <- intersect(pituitary_marker, rownames(seurat_rds))
+gh1_expression <- FetchData(seurat_rds, slot = "count", vars = c("gh1"))
+
+pdf("20221103_gh1_expression.pdf", 8, 6)
+VlnPlot(seurat_rds, features = "gh1", y.max = 300)
+dev.off()
+
+pdf("20221103_pituitary_marker_expression_exclude_gh1.pdf", 10, 8)
+VlnPlot(seurat_rds, features = c("crhr1", "ghrhra", "ghrhrb", "ghrhrl", "prl",
+                                 "tshba", "lhb", "fshb", "pomca", "pomcb" ), ncol = 5,
+        y.max = 20)
+
+dev.off()
+
+#### 
+seurat_rds <- subset(seurat_rds, gh1 <=1)
+seurat_rds <- subset(seurat_rds, crhr1 <=1)
+seurat_rds <- subset(seurat_rds, tshba <=1)
+VlnPlot(seurat_rds, features = pituitary_marker, y.max = 5)
+
+saveRDS(seurat_rds, "zebrafish_scRNAseq_analysis_multiple_dataquality_overview_seurat_rm_potencial_pituitary_cell.rds")
+
+```
+
+### Seurat pipeline harmony integration Analysis
+```{r Seurat pipeline harmony integration Analysis, echo = FALSE, message=FALSE}
+
+## linux run MutilDataLogHarmonyintegrate.R  code
+rm(list = ls())
+path <- '/home/zhengjh/projects/PinealGland/analysis/Zebrafish/'
+knitr::opts_chunk$set(eval=TRUE, #在块中运行代码(default = TRUE)
+                      highlight = T, #高亮显示
+                      echo = F, #是否在输出中包含源代码
+                      tidy=TRUE,#是否整理代码
+                      error = T, #是否在输出中包含错误信息
+                      warning = F, #是否在输出中包含警告(default = TRUE)
+                      message  = F, #是否在输出中包含参考的信息
+                      cache=F)
+knitr::opts_knit$set(root.dir = path)
+setwd(path)
+
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+
+log_zebrafish <- readRDS("zebrafish_scRNAseq_logtransform_harmony_seurat.rds")
+# sct_zebrafish <- readRDS("zebrafish_scRNAseq_SCTtransform_harmony_seurat.rds")
+
+library(openxlsx)
+markercelltype_df <- read.xlsx("/home/zhengjh/projects/PinealGland/analysis/Zebrafish/Zebrafish_CelltypeMakers.xlsx",  rowNames = T)
+
+### log
+DefaultAssay(log_zebrafish) <- "RNA"
+log_zebrafish@active.ident <- log_zebrafish$RNA_snn_res.0.5
+log_zebrafish <- MapCelltypeByMarkers(exp_count.seurat = log_zebrafish, markercelltype_df = markercelltype_df)
+
+DimPlot(log_zebrafish, label = T, reduction = "tsne")
+
+celltype <- c("Rod−like photoreceptors", "Rod−like photoreceptors",
+							"Retinal pigment epithelium−like", "Rod−like photoreceptors",
+							"Muller glia−like", "Neuron",
+							"Neuron","Endothelial",
+							"Cone−like photoreceptors", "Microglia")
+
+
+log_zebrafish@active.ident <- log_zebrafish$RNA_snn_res.0.5
+
+new.cluster.ids <- celltype
+names(new.cluster.ids) <- levels(log_zebrafish)
+log_zebrafish <- RenameIdents(log_zebrafish, new.cluster.ids)
+DimPlot(log_zebrafish, label = T, reduction = "tsne", group.by = "RNA_snn_res.0.5")
+
+plot <- DimPlot(log_zebrafish, reduction = "tsne")
+select.cells <- CellSelector(plot = plot)
+head(select.cells)
+Idents(log_zebrafish, cells = select.cells) <- "VLMCs"
+
+DotPlot(log_zebrafish, features = markercelltype_df$markers)
+
+
+levels_define <- c("Rod−like photoreceptors", "Cone−like photoreceptors",
+                   "Retinal pigment epithelium−like",
+                   "Muller glia−like" , "Microglia","Neuron" ,
+                   "VLMCs", "Endothelial")
+log_zebrafish$celltype_assign <- factor(as.character(log_zebrafish@active.ident),
+                                            levels = levels_define)
+
+log_zebrafish@active.ident <- log_zebrafish$celltype_assign
+
+#### rerun top marker of each cluster
+file_prefix <- "20221108_zebfrafish_pineal_gland_celltype_"
+Cluster_markers <- FindmarkerForCluster(log_zebrafish, file_prefix, min.pct = 0.25, logfc.threshold = 0.5,
+																				p_val_adj = 0.05, mt_rb_pattern = "^mt-|^rpl|^rps")
+
+file_prefix <- "20221108_zebfrafish_pineal_gland_celltype_"
+top_num <- 20
+TopMarkersInClusters <- TopMarkersInCluster(Cluster_markers, file_prefix, top_num)
+
+saveRDS(log_zebrafish, "20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+
+```
+
+### generate Main Fig1A/B
+```{r generate sup fig echo = FALSE, message=FALSE}
+### clustering ####
+
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/")
+log_zebrafish <- readRDS("20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+
+# RColorBrewer::display.brewer.all( type = "qual")
+# col1 <- brewer.pal(8,"Set3")
+# col1[2] <-  brewer.pal(12,"Set3")[12]
+col1 <- c("#80B1D3", "#FDB462", "#76C4C4", "#BEBADA", "#BEBADA", "#FCCDE5", "#8DD3C7", "#FFED6F")
+#getPalette = colorRampPalette(RColorBrewer::brewer.pal(8, "Set3"))
+
+pdf("20221108_final_zebrafish_pineal_gland_scRNA_seq_clustering_lognorm_harmony.pdf", 8, 6)
+DimPlot(log_zebrafish, group.by = "celltype_assign", reduction = "tsne",
+        label = T, cols = col1) 
+dev.off()
+
+pdf("20221108_zebrafish_pineal_gland_scRNA_seq_clustering_split.pdf", 10, 6)
+DimPlot(log_zebrafish, group.by = "celltype_assign", reduction = "tsne",
+        label = T, cols = col1, split.by = "orig.ident") + NoLegend()
+dev.off()
+
+#### cell barplot #####
+cellnum <- as.data.frame(table(log_zebrafish$celltype_assign, 
+                               log_zebrafish$orig.ident))
+colnames(cellnum) <- c("celltype", "group", "Freq")
+
+levels_define <- c("Rod−like photoreceptors", "Cone−like photoreceptors",
+                   "Retinal pigment epithelium−like",
+                   "Muller glia−like", "Microglia", "Neuron" ,
+                   "VLMCs", "Endothelial")
+
+cellnum$celltype <- factor(as.character(cellnum$celltype),
+                                         levels = rev(levels_define))
+
+percentageplot <- GeomcolWrap(plot_data = cellnum, 
+										x_group = cellnum$group, 
+										y_value = cellnum$Freq, fill_group = cellnum$celltype, 
+										fill_cols = rev(col1), 
+										title_name = "Percent of Cells from each sample",
+										x_axis_name = "sample", y_axis_name = "Percent")
+ggsave("20221108_zebrafish_pinealgland_cellpercentage_barplot.pdf", percentageplot, width = 6, height = 8)
+write.xlsx(cellnum, "20221108_zebrafish_pinealgland_cellpercentage.xlsx", 
+           rowNames = T, colNames = T, overwrite = T)
+
+#### dotplot of markers ####
+markers <- c("asip2b", "stra6", "rpe65a", "rdh5",
+             "rbp1", "slc13a1", "vim", "dkk3b",
+             "dcn", "pmp22a", "cldn11a", "sost", 
+             "cldn5b", "flt1", "sox7", "aplnra",
+             "ctss2.1", "ctss2.2", "cd74a", "cd74b",
+             "exorh", "gnat1", "gngt1", "rcvrnb",
+						 "bdnf", "elavl3", "vgf", "snap25a",
+             "gnat2", "gngt2a", "gnb3b", "opn1lw1"
+             )
+
+levels_define <- rev(c("Retinal pigment epithelium-like", "Muller glia-like",
+									 "VLMCs", "Endothelial", "Microglia",
+									 "Rod-like photoreceptors", "Neuron", "Cone-like photoreceptors"))
+
+log_zebrafish$celltype_assign <- factor(as.character(log_zebrafish$celltype_assign),
+                                        levels = levels_define)
+p_dotplot <- DotPlot(log_zebrafish, features = markers, group.by = "celltype_assign", col.min = 0, col.max = 2)
+
+p_dotplot <- p_dotplot + coord_flip()
+p_dotplot <- p_dotplot + scale_colour_gradient2(low = "lightgrey",high = "Red", midpoint = 1, breaks=c(0, 1, 2), label = c(0, 1, 2))
+p_dotplot <- p_dotplot + theme(axis.text.x = element_text(size = 10, vjust = 1, hjust = 1, angle = 45))
+ggsave("20221108_pineal_gland_celltypemarker_DotPlot.pdf",  plot = p_dotplot, width = 10, height = 9)
+
+#p_dotplot <- p_dotplot + theme(axis.text.y = element_blank(), axis.title.y = element_blank(),
+                               # axis.title.x = element_blank() )
+p_dotplot_no <- p_dotplot + NoLegend()
+
+
+
+#### Use top 20 markers to generate cluster dendrogram #####
+TopMarkersInClusters <- read.csv("4.MarkersInCluster/20221108_zebfrafish_pineal_gland_celltype__top_marker20.csv", row.names = 1)
+Variable_gene <- rev(unique(TopMarkersInClusters$gene))
+
+hclust_exp <- t(log_zebrafish@assays$RNA@data[Variable_gene, ])
+
+hclust_exp_mean <- aggregate(hclust_exp,  
+                             by = list(celltype = as.character(log_zebrafish$celltype_assign)), 
+                             mean)
+
+celltypenames <- hclust_exp_mean$celltype
+hclust_exp_mean <- hclust_exp_mean[, -1]
+rownames(hclust_exp_mean) <- celltypenames
+
+library(factoextra)
+library(igraph)
+bc.scaled <- scale(hclust_exp_mean)
+d <- dist(bc.scaled)
+fit1 <- hclust(d, method = "ward.D2")
+plot(fit1,hang = -1,cex=.8,main = "title")
+
+p2 <- fviz_dend(fit1, k=4, rect =T, rect_fill = T,horiz = F,
+                rect_border = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"))
+
+plots <- plot_grid(p2, p_dotplot_no, ncol = 1, rel_heights = c(0.2, 1), align = "v")
+
+pdf("20221108_pineal_gland_cluster_dendrogram_ward_D2_top20_with_dotplotmarker.pdf", 10, 8)
+plots
+dev.off()
+
+saveRDS(plots, "20221108_zebrafish_dotplot_cluster.rds")
+
+```
+
+##Rat
+### First Clustering-celltypeidentification
+```{r Seurat Analysis, echo = FALSE, message=FALSE}
+rm(list = ls())
+setwd("/home/zhengjh/other/PinealGland/Results/Rat/SeuratAnalysis")
+list.files()
+
+source("/home/zhengjh/projects/Ob/Code/Seurat_function.R")
+source("/home/zhengjh/projects/Ob/Code/diffprop_functions.R")
+
+#### a. Read Data #####
+
+data_path <- "/home/zhengjh/other/PinealGland/Data/Rat_GSE115723_RAW/"
+first_dir <- paste0(data_path, list.files(data_path))
+
+#### raw matrix 
+shortname <- c("PinealGland_Day1", "PinealGland_Day2",
+               "PinealGland_Night1", "PinealGland_Night2")
+for(i in 1:length(first_dir)){
+  print(shortname[i])
+  assign(shortname[i], Read10X(data.dir = first_dir[i]))
+  mm <- get(shortname[i])
+  print(dim(mm)) # 22250 gene * 737280 cell
+  colnames(mm) <- paste0(shortname[i],"_", colnames(mm))
+}
+
+### filter cells
+
+index_day1 <- colSums(PinealGland_Day1 > 0) > 200
+sum(index_day1) # 2582
+PinealGland_Day1 <- PinealGland_Day1[ , index_day1]
+dim(PinealGland_Day1)
+
+index_day2 <- colSums(PinealGland_Day2 > 0) > 200
+sum(index_day2) # 3560
+PinealGland_Day2 <- PinealGland_Day2[ , index_day2]
+dim(PinealGland_Day2)
+
+index_night1 <- colSums(PinealGland_Night1 > 0) > 200
+sum(index_night1) # 4574
+PinealGland_Night1 <- PinealGland_Night1[ , index_night1]
+dim(PinealGland_Night1)
+
+index_night2 <- colSums(PinealGland_Night2 > 0) > 200
+sum(index_night2) # 3993
+PinealGland_Night2 <- PinealGland_Night2[ , index_night2]
+dim(PinealGland_Night2)
+# PinealGland_Day1: 22250  2582
+# PinealGland_Day2: 22250 3560
+# PinealGland_Night1: 22250  4574
+# PinealGland_Night2: 22250 3993
+
+A <- rownames(PinealGland_Day1)
+B <- rownames(PinealGland_Day2)
+C <- rownames(PinealGland_Night1)
+D <- rownames(PinealGland_Night2)
+
+samegene <- Reduce(intersect, list(A, B, C, D)) # 22250
+length(samegene) # 22250
+
+exp_count <- cbind(PinealGland_Day1[samegene, ],
+                   PinealGland_Day2[samegene, ], 
+                   PinealGland_Night1[samegene, ], 
+                   PinealGland_Night2[samegene, ])
+dim(exp_count) # 22250 gene * 14709 cell
+shortname <- c("PinealGland_Day1", "PinealGland_Day2",
+               "PinealGland_Night1", "PinealGland_Night2")
+
+ncell <- c(ncol(PinealGland_Day1), ncol(PinealGland_Day2),
+           ncol(PinealGland_Night1), ncol(PinealGland_Night2))
+
+label <- rep(shortname, ncell)
+dim(exp_count) # 22250 gene * 14709 cell
+##### b. Construct Seuart object  #####
+sameple_num <- ncell
+prefix_name <- c("PinealGland_Day1", "PinealGland_Day2",
+                 "PinealGland_Night1", "PinealGland_Night2")
+pr_name <- "rat pineal gland scRNA-seq  Analysis"
+min_cell <- 3 # filter gene: at least express in 3 cells
+Or_ident <- rep(prefix_name, sameple_num)
+table(Or_ident)
+#   PinealGland_Day1   PinealGland_Day2 PinealGland_Night1 PinealGland_Night2
+#   2582               3560               4574               3993
+mt_pattern<-"^mt-"
+rp_pattern<-"^Rpl|^Rps"
+Aggregated_seurat <- Create_seurat_filter_cell(exp_count,pr_name,
+                                               min_cell,Or_ident,
+                                               mt_pattern,rp_pattern)
+
+dim(Aggregated_seurat) # 15838 gene * 14709 cell
+
+###### c. Cell Quality Control #####
+
+# CellCycle Score
+mm_sgene <- c("Mcm5", "Pcna", "Tyms", "Fen1", "Mcm7", "Mcm4", "Rrm1", "Ung", "Gins2", "Mcm6", 
+              "Cdca7", "Dtl", "Prim1", "Uhrf1", "Cenpu", "Hells", "Rfc2", "Polr1b", "Nasp", "Rad51ap1", "Gmnn", 
+              "Wdr76", "Slbp", "Ccne2", "Ubr7", "Pold3", "Msh2", "Atad2", "Rad51", "Rrm2", "Cdc45", "Cdc6", 
+              "Exo1", "Tipin", "Dscc1", "Blm", "Casp8ap2", "Usp1", "Clspn", "Pola1", "Chaf1b", "Mrpl36", "E2f8")
+cc.genes$s.genes <- mm_sgene
+
+mm_g2mgene <- c("Hmgb2", "Cdk1", "Nusap1", "Ube2c", "Birc5", "Tpx2", "Top2a", "Ndc80", "Cks2", 
+                "Nuf2",  "Cks1b", "Mki67", "Tmpo",  "Cenpf", "Tacc3", "Pimreg", "Smc4", "Ccnb2", "Ckap2l", 
+                "Ckap2", "Aurkb", "Bub1", "Kif11", "Anp32e", "Tubb4b", "Gtse1", "Kif20b", "Hjurp", "Cdca3", 
+                "Jpt1", "Cdc20", "Ttk", "Cdc25c", "Kif2c", "Rangap1", "Ncapd2", "Dlgap5", "Cdca2", "Cdca8", 
+                "Ect2", "Kif23", "Hmmr", "Aurka", "Psrc1", "Anln", "Lbr", "Ckap5", "Cenpe", "Ctcf", "Nek2", 
+                "G2e3", "Gas2l3", "Cbx5", "Cenpa")
+cc.genes$g2m.genes <- mm_g2mgene
+
+Aggregated_seurat <- CellCycleScoring(object = Aggregated_seurat, 
+                                      s.features = mm_sgene, 
+                                      g2m.features = mm_g2mgene)
+# QC 
+QC(Aggregated_seurat, "Rat_pineal_gland_scRNA_seq_unfilter")
+
+
+Aggregated_seurat <- subset(Aggregated_seurat, nCount_RNA < 20000 &
+                              nFeature_RNA < 5500 & nFeature_RNA > 200  &
+                              percent.rp < 20 )
+# PinealGland_Day1   PinealGland_Day2 PinealGland_Night1 PinealGland_Night2
+# 2475               3399               4463               3825
+
+dim(Aggregated_seurat) #  15838 * 14162
+QC(Aggregated_seurat, "Rat_pineal_gland_scRNA_seq_filter")
+print(levels(Aggregated_seurat$orig.ident)) 
+
+###### d. Select Pcs  #####
+condition <- "Rat_pineal_gland_scRNA_seq"
+npc_plot <- 100
+Aggregated_seurat <- Select_pc(Aggregated_seurat,condition,npc_plot)
+
+###### e. Remove Batch Effect #######
+
+##### harmony 
+DefaultAssay(Aggregated_seurat) <- "RNA"
+Aggregated_seurat <- NormalizeData(Aggregated_seurat, normalization.method = "LogNormalize",
+                                   scale.factor = 10000)
+Aggregated_seurat <- FindVariableFeatures(Aggregated_seurat, selection.method = "vst", nfeatures = 3000)
+Aggregated_seurat <- ScaleData(Aggregated_seurat)
+
+# Eliminate batch effects with harmony and cell classification
+Aggregated_seurat <- RunPCA(Aggregated_seurat, pc.genes = Aggregated_seurat@var.genes, 
+                            npcs = 30, verbose = FALSE)
+options(repr.plot.height = 2.5, repr.plot.width = 6)
+library(harmony)
+Aggregated_seurat <- Aggregated_seurat %>% RunHarmony("orig.ident", plot_convergence = TRUE)
+
+Aggregated_seurat <- Aggregated_seurat %>% 
+  RunTSNE(reduction = "harmony", dims = 1:15) %>% 
+  RunUMAP(reduction = "harmony", dims = 1:15) %>% 
+  FindNeighbors(reduction = "harmony", dims = 1:15) %>% 
+  FindClusters(resolution = 0.5) %>% 
+  identity()
+
+new.cluster.ids <- as.numeric(levels(Aggregated_seurat)) + 1
+names(new.cluster.ids) <- levels(Aggregated_seurat)
+Aggregated_seurat <- RenameIdents(Aggregated_seurat, new.cluster.ids)
+
+###### f. Top markers of each cluster #######
+FindmarkerForCluster <- function(exp_count.seurat,condition){
+  folder_name="4.DEGsBetweenCluster"
+  if (file.exists(folder_name)){
+    print("3.DEGsBetweenCluster file existed.")
+  }
+  else{
+    dir.create(folder_name)
+  } 
+  
+  exp_count.markers <- FindAllMarkers(object = exp_count.seurat, 
+                                      only.pos = TRUE, 
+                                      min.pct = 0.5, logfc.threshold = 0.5)
+  index <- exp_count.markers$p_val_adj < 0.05 
+  exp_count.markers <- exp_count.markers[index,]
+  save_name <- paste0(condition,"_DEGsbetweenClusters.csv")
+  write.csv(exp_count.markers,save_name)
+  
+  file.copy(save_name, folder_name,overwrite = T)
+  file.remove(save_name)
+  return(exp_count.markers)
+}
+
+condition <- paste0("Rat_pineal_gland_scRNA_seq", "cluster")
+Cluster_markers <- FindmarkerForCluster(Aggregated_seurat, condition)
+
+condition <- "Rat_pineal_gland_scRNA_seq_cluster"
+top_num <- 20
+TopMarkersInClusters <- TopMarkersInCluster(Cluster_markers,condition,top_num)
+
+########### h. Identify celltype ############
+
+Aggregated_seurat@assays$SCT <- NULL
+saveRDS(Aggregated_seurat, "Rat_pineal_gland_Aggregated_seurat.rds")
+
+### local analysis
+rm(list = ls())
+setwd("/Users/zhengyiyi/Desktop/AJI/Other/PinealGland/Results/Rat/")
+
+
+# source("/Users/zhengyiyi/Desktop/code/FunctionScripts-Mac/diffprop_functions.R")
+source("/Users/zhengyiyi/Desktop/code/FunctionScripts-Mac/Seurat_function.R")
+
+
+library(Seurat)
+Aggregated_seurat <- readRDS("Rat_pineal_gland_Aggregated_seurat.rds")
+
+celltype <- c("α-pinealocyte","α-pinealocyte", "α-pinealocyte", "α-pinealocyte",
+              "α-pinealocyte", "β-pinealocyte", "astrocyte", "α-pinealocyte",
+              "β-pinealocyte", "VLMCs", "α-pinealocyte", "astrocyte",
+              "microglia", "astrocyte", "astrocyte", "endothelial",
+              "astrocyte")
+Aggregated_seurat$seurat_clusters <- Aggregated_seurat@active.ident
+
+new.cluster.ids <- celltype
+names(new.cluster.ids) <- levels(Aggregated_seurat)
+Aggregated_seurat <- RenameIdents(Aggregated_seurat, new.cluster.ids)
+
+########### i.Remove Doublets #########
+
+library(DoubletFinder)
+sweep.res.list_hypo <- paramSweep_v3(Aggregated_seurat, PCs = 1:20)
+sweep.stats_hypo <- summarizeSweep(sweep.res.list_hypo, GT = FALSE)
+bcmvn_hypo <- find.pK(sweep.stats_hypo)
+mpK<-as.numeric(as.vector(bcmvn_hypo$pK[which.max(bcmvn_hypo$BCmetric)]))
+# 0.2
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Aggregated_seurat@active.ident
+homotypic.prop <- modelHomotypic(annotations)
+
+nExp_poi <- round(0.031*ncol(Aggregated_seurat@assays$RNA@data))
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+## Run DoubletFinder with varying classification stringencies 
+seurat_filterDouble <- doubletFinder_v3(Aggregated_seurat, PCs = 1:20, 
+                                        pN = 0.25, pK = mpK, nExp = nExp_poi,
+                                        reuse.pANN = FALSE, sct = T)
+
+head(seurat_filterDouble@meta.data)
+write.csv(seurat_filterDouble@meta.data,"20220601_Rat_pineal_gland__harmony_project_0.031.csv")
+# Aggregated_seurat <- seurat_filterDouble
+Aggregated_seurat$doublets <- seurat_filterDouble$DF.classifications_0.25_0.2_439
+
+p0 <- DimPlot(Aggregated_seurat, reduction = "umap", group.by='doublets',  label = T)
+
+Aggregated_seurat <- subset(Aggregated_seurat, doublets %in% c("Singlet"))
+
+
+### refind top marker
+condition <- "20220601_rat_pineal_gland_celltype"
+Cluster_markers <- FindmarkerForCluster(Aggregated_seurat, condition)
+
+condition <- "20220601_rat_pineal_gland_celltype"
+top_num <- 20
+TopMarkersInClusters <- TopMarkersInCluster(Cluster_markers,condition,top_num)
+
+Aggregated_seurat$celltype_assign <- Aggregated_seurat@active.ident
+saveRDS(Aggregated_seurat, "Rat_pineal_gland_Aggregated_seurat.rds")
+
+```
+
+### Generate Sup Fig 1C/D
+```{r  Generate Figs 1C/D echo = FALSE, message=FALSE}
+##########  j. generate Supplementary Figure 1C/1D ########
+
+## we just use day group data here
+#### clustering ####
+pdf("20220601_rat_pineal_gland_scRNA_seq_clustering.pdf", 8, 8)
+DimPlot(Aggregated_seurat, group.by = "celltype_assign", reduction = "tsne",
+        label = T) + NoLegend()
+dev.off()
+
+#### cell barplot ######
+cellnum <- as.data.frame(table(Aggregated_seurat$celltype_assign, 
+                               Aggregated_seurat$orig.ident))
+
+
+plot_data <- data.frame(cellnum = cellnum$Freq,
+                        cellpercentage = c(cellnum$Freq[1:8]/sum(cellnum$Freq[1:8]),
+                                           cellnum$Freq[9:16]/sum(cellnum$Freq[9:16])),
+                        group = cellnum$Var2,
+                        celltype = cellnum$Var1)
+plot_data$cellpercentage <- plot_data$cellpercentage * 100
+
+plot_data$celltype <- factor(plot_data$celltype ,
+                             levels = levels(Aggregated_seurat$celltype_assign))
+
+write.xlsx(plot_data, "20220530_rat_pinealgland_cellpercentage.xlsx", 
+           rowNames = T, colNames = T, overwrite = T)
+
+
+library(ggplot2)
+
+p <- ggplot(plot_data, aes(x=group,y=cellpercentage,fill=celltype)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_classic() 
+p1 <- p + theme(axis.text.x = element_text(size = 5, color = "black", face="bold"),
+                axis.text.y = element_text(size = 5, color = "black", face="bold"))
+p1 <- p1 + ggtitle("zebrafish pinealgland") 
+p1 <- p1 + theme(plot.title = element_text(hjust = 0.5))
+p1 <- p1 + theme(plot.title = element_text(size = 10))
+p1 <- p1 + xlab("") + ylab("Percentage of celltype")
+p1 <- p1 + theme(axis.title.x = element_text(size = 10)) # x轴字体大小
+p1 <- p1 + theme(axis.title.y = element_text(size = 10)) # y轴字体大小
+#p1 <- p1 + scale_fill_manual(values=col1)
+p1 <- p1 + scale_y_continuous(limits=c(0, 100), breaks=seq(0,100,25), 
+                              expand = c(0,0))
+
+pdf("220530_rat_pinealgland_cellpercentage_barplot.pdf", 6, 6)
+p1
+dev.off()
+
+```
+
+
+
+### Reanalysis: rm cells expressing pomc 
+```{r Seurat Analysis, echo = FALSE, message=FALSE}
+
+## linux run MultipleDataQualityOverview.R code
+rm(list = ls())
+path <- '/home/zhengjh/projects/PinealGland/analysis/Rat'
+knitr::opts_chunk$set(eval=TRUE, #在块中运行代码(default = TRUE)
+                      highlight = T, #高亮显示
+                      echo = F, #是否在输出中包含源代码
+                      tidy=TRUE,#是否整理代码
+                      error = T, #是否在输出中包含错误信息
+                      warning = F, #是否在输出中包含警告(default = TRUE)
+                      message  = F, #是否在输出中包含参考的信息
+                      cache=F)
+knitr::opts_knit$set(root.dir = path)
+
+seurat_rds <- readRDS("rat_scRNAseq_analysis_multiple_dataquality_overview_seurat.rds")
+
+## rat no gh1 gene
+VlnPlot(seurat_rds, features = "Gh1")
+
+pituitary_marker <- c("Crhr1",  "Ghrhr", "Prl", "Tshb", "Trhr",  "Lhb", "Fshb", "Pomc")
+
+pituitary_marker <- intersect(pituitary_marker, rownames(seurat_rds))
+
+
+pdf("20221108_pituitary_marker_expression_exclude_gh1.pdf", 10, 8)
+VlnPlot(seurat_rds, features = pituitary_marker, ncol = 3, y.max =10)
+dev.off()
+
+#### 
+seurat_rds <- subset(seurat_rds, Pomc <= 1)
+seurat_rds <- subset(seurat_rds, Lhb <= 1)
+seurat_rds <- subset(seurat_rds, Ghrhr <= 1)
+VlnPlot(seurat_rds, features = pituitary_marker, y.max = 5)
+
+saveRDS(seurat_rds, "rat_scRNAseq_analysis_multiple_dataquality_overview_seurat_rm_potencial_pituitary_cell.rds")
+
+```
+
+### Seurat pipeline harmony integration Analysis
+```{r Seurat pipeline harmony integration Analysis, echo = FALSE, message=FALSE}
+
+## linux run MultipleDataQualityOverview.R code
+rm(list = ls())
+path <- '/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/'
+knitr::opts_chunk$set(eval=TRUE, #在块中运行代码(default = TRUE)
+                      highlight = T, #高亮显示
+                      echo = F, #是否在输出中包含源代码
+                      tidy=TRUE,#是否整理代码
+                      error = T, #是否在输出中包含错误信息
+                      warning = F, #是否在输出中包含警告(default = TRUE)
+                      message  = F, #是否在输出中包含参考的信息
+                      cache=F)
+knitr::opts_knit$set(root.dir = path)
+setwd(path)
+
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+
+log_rat <- readRDS("rat_scRNAseq_logtransform_harmony_seurat.rds")
+# sct_rat <- readRDS("rat_scRNAseq_SCTtransform_harmony_seurat.rds")
+
+library(openxlsx)
+markercelltype_df <- read.xlsx("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/Rat_CelltypeMarker.xlsx",  rowNames = T)
+
+### log
+DefaultAssay(log_rat) <- "RNA"
+log_rat@active.ident <- log_rat$RNA_snn_res.0.5
+log_rat <- MapCelltypeByMarkers(exp_count.seurat = log_rat, markercelltype_df = markercelltype_df)
+
+DimPlot(log_rat, label = T, reduction = "tsne", group.by = "RNA_snn_res.0.5")
+
+celltype <- c("β-pinealocyte",  "β-pinealocyte", "β-pinealocyte", "β-pinealocyte", "β-pinealocyte", "β-pinealocyte",
+							"Astrocyte", "β-pinealocyte", "α-pinealocyte", "VLMCs", "β-pinealocyte", "Astrocyte", "Microglia",
+							"Astrocyte", "Astrocyte", "Endothelial")
+
+log_rat$celltype_twomakers <- log_rat$celltype_assign
+log_rat@active.ident <- log_rat$RNA_snn_res.0.5
+
+new.cluster.ids <- celltype
+names(new.cluster.ids) <- levels(log_rat)
+log_rat <- RenameIdents(log_rat, new.cluster.ids)
+DimPlot(log_rat, label = T, reduction = "tsne", group.by = "ident")
+
+saveRDS(log_rat, "20221108_all_day_night_rat_scRNAseq_logtransform_harmony_seurat.rds")
+
+### just use day data
+log_rat <- subset(log_rat, orig.ident %in% c("GSM3188343_Pineal_Gland_Day_1", "GSM3188345_Pineal_Gland_Day_2"))
+
+library(harmony)
+DefaultAssay(log_rat) <- "RNA"
+log_rat <- NormalizeData(log_rat, normalization.method = "LogNormalize",
+																	 scale.factor = 10000)
+log_rat <- FindVariableFeatures(log_rat, selection.method = "vst",  nfeatures = 3000)
+log_rat <- ScaleData(log_rat)
+
+# Eliminate batch effects with harmony and cell classification
+log_rat <- RunPCA(log_rat, pc.genes = log_rat@var.genes, npcs = 30, verbose = FALSE)
+print(ElbowPlot(object = log_rat, ndims = 30, reduction = "pca"))
+
+log_rat <- log_rat %>% RunHarmony("orig.ident", plot_convergence = TRUE, dims.use = 1:20)
+
+log_rat <- log_rat %>% 
+  RunTSNE(reduction = "harmony", dims = 1:20) %>% 
+  RunUMAP(reduction = "harmony", dims = 1:20) %>% 
+  FindNeighbors(reduction = "harmony", dims = 1:20, k.param = 20) %>% 
+  FindClusters(resolution = 0.5) %>% 
+  identity()
+
+DimPlot(log_rat, reduction = "tsne", label = T, group.by = "celltype")
+
+celltype <- c("β-pinealocyte",  "β-pinealocyte", "β-pinealocyte", "β-pinealocyte", "β-pinealocyte", 
+							"Astrocyte",  "α-pinealocyte", "VLMCs", "Microglia", "Astrocyte")
+
+log_rat$celltype_twomakers <- log_rat$celltype_assign
+log_rat@active.ident <- log_rat$RNA_snn_res.0.5
+
+new.cluster.ids <- celltype
+names(new.cluster.ids) <- levels(log_rat)
+log_rat <- RenameIdents(log_rat, new.cluster.ids)
+DimPlot(log_rat, label = T, reduction = "tsne", group.by = "ident")
+
+plot <- DimPlot(log_rat, reduction = "tsne")
+select.cells <- CellSelector(plot = plot)
+head(select.cells)
+Idents(log_rat, cells = select.cells) <- "Endothelial"
+
+
+DotPlot(log_rat, features = markercelltype_df$markers)
+
+levels_define <- c("α-pinealocyte", "β-pinealocyte", "Microglia", "Astrocyte", "Endothelial", "VLMCs")
+log_rat$celltype_assign <- factor(as.character(log_rat@active.ident),
+                                            levels = levels_define)
+
+log_rat@active.ident <- log_rat$celltype_assign
+
+#### rerun top marker of each cluster
+file_prefix <- "20221108_rat_day_pineal_gland_celltype_"
+Cluster_markers <- FindmarkerForCluster(log_rat, file_prefix, min.pct = 0.25, logfc.threshold = 0.5,
+																				p_val_adj = 0.05, mt_rb_pattern = "^Mt-|^rpl|^rps")
+
+file_prefix <- "20221108_rat_day_pineal_gland_celltype_"
+top_num <- 20
+TopMarkersInClusters <- TopMarkersInCluster(Cluster_markers, file_prefix, top_num)
+
+saveRDS(log_rat, "20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+
+```
+
+### Generate sup Fig1C/D
+```{r Seurat Analysis, echo = FALSE, message = FALSE}
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/")
+log_rat <- readRDS("20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+
+### clustering ####
+
+# RColorBrewer::display.brewer.all( type = "qual")
+#col1 <- brewer.pal(8,"Set3")
+#col1[2] <-  brewer.pal(12,"Set3")[12]
+col1 <- c("#FDB462", "#80B1D3", "#BEBADA", "#FB8072", "#FFED6F", "#8DD3C7")
+#getPalette = colorRampPalette(RColorBrewer::brewer.pal(8, "Set3"))
+
+pdf("20221108_final_rat_pineal_gland_scRNA_seq_clustering_lognorm_harmony.pdf", 8, 6)
+DimPlot(log_rat, group.by = "celltype_assign", reduction = "tsne",
+        label = T, cols = col1) 
+dev.off()
+
+pdf("20221108_rat_pineal_gland_scRNA_seq_clustering_split.pdf", 10, 6)
+DimPlot(log_rat, group.by = "celltype_assign", reduction = "tsne",
+        label = T, cols = col1, split.by = "orig.ident") + NoLegend()
+dev.off()
+
+#### cell barplot #####
+cellnum <- as.data.frame(table(log_rat$celltype_assign, 
+                               log_rat$orig.ident))
+colnames(cellnum) <- c("celltype", "group", "Freq")
+
+levels_define <- c("α-pinealocyte", "β-pinealocyte", "Microglia", "Astrocyte", "Endothelial", "VLMCs")
+
+cellnum$celltype <- factor(as.character(cellnum$celltype),
+                                            levels = rev(levels_define))
+
+percentageplot <- GeomcolWrap(plot_data = cellnum, 
+										x_group = cellnum$group, 
+										y_value = cellnum$Freq, fill_group = cellnum$celltype, 
+										fill_cols = rev(col1), 
+										title_name = "Percent of Cells from each sample",
+										x_axis_name = "sample", y_axis_name = "Percent")
+
+ggsave("20221108_rat_pinealgland_cellpercentage_barplot.pdf", percentageplot, width = 6, height = 8)
+
+write.xlsx(cellnum, "20221108_rat_pinealgland_cellpercentage.xlsx", 
+           rowNames = T, colNames = T, overwrite = T)
+
+#### dotplot of markers ####
+
+markers <- rev(c("Chga", "Asmt", "Prdx2", "Lamp1",
+								 "Gngt2", "Tma7", "Sncb", "Plekhb1", 
+								  "C1qc", "Aif1", "Lyz2", "C1qa", 
+									"Car3", "Penk", "Id3", "Sparcl1",
+								 "Plvap", "Clec14a", "Flt1", "Emcn",
+								 "Dcn", "Col3a1", "Col1a1", "Cldn11"))
+
+levels_define <- c("α-pinealocyte", "β-pinealocyte",  "Microglia", "Astrocyte", "Endothelial", "VLMCs")
+
+log_rat$celltype_assign <- factor(as.character(log_rat$celltype_assign),
+                                        levels = levels_define)
+p_dotplot <- DotPlot(log_rat, features = markers, group.by = "celltype_assign", col.min = 0, col.max = 2)
+
+p_dotplot <- p_dotplot + coord_flip()
+p_dotplot <- p_dotplot + scale_colour_gradient2(low = "lightgrey",high = "Red", midpoint = 1, breaks=c(0, 1, 2), label = c(0, 1, 2))
+p_dotplot <- p_dotplot + theme(axis.text.x = element_text(size = 10, vjust = 0.5, hjust = 0.5, angle = 45))
+ggsave("20221108_rat_gland_celltypemarker_DotPlot.pdf", plot = p_dotplot, width = 10, height = 9)
+
+#p_dotplot <- p_dotplot + theme(axis.text.y = element_blank(), axis.title.y = element_blank(),
+                               #axis.title.x = element_blank() )
+p_dotplot_no <- p_dotplot + NoLegend()
+
+#### Use top 20 markers to generate cluster dendrogram #####
+TopMarkersInClusters <- read.csv("4.MarkersInCluster/20221108_rat_day_pineal_gland_celltype__top_marker20.csv", row.names = 1)
+Variable_gene <- rev(unique(TopMarkersInClusters$gene))
+
+hclust_exp <- t(log_rat@assays$RNA@data[Variable_gene, ])
+
+hclust_exp_mean <- aggregate(hclust_exp,  
+                             by = list(celltype = as.character(log_rat$celltype_assign)), 
+                             mean)
+
+celltypenames <- hclust_exp_mean$celltype
+hclust_exp_mean <- hclust_exp_mean[, -1]
+rownames(hclust_exp_mean) <- celltypenames
+
+library(factoextra)
+library(igraph)
+bc.scaled <- scale(hclust_exp_mean)
+d <- dist(bc.scaled)
+fit1 <- hclust(d, method = "ward.D2")
+plot(fit1,hang = -1,cex=.8,main = "title")
+
+p2 <- fviz_dend(fit1, k=4, rect =T, rect_fill = T,horiz = F,
+                rect_border = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"))
+
+plots <- plot_grid(p2, p_dotplot_no, ncol = 1, rel_heights  = c(0.2, 1), align = "v")
+
+saveRDS(plots, "20230209_rat_dotplot_cluster.rds")
+pdf("20221108_rat_pineal_gland_cluster_dendrogram_ward_D2_top20_with_dotplotmarker.pdf", 10, 8)
+plots
+dev.off()
+
+```
+
+
+##Monkey
+### Clustering-celltypeidentification
+```{r Seurat Analysis, echo = FALSE, message=FALSE}
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/Monkey/Seurat_Analysis")
+list.files()
+
+######## a.read data ######
+datapath <- "/home/zhengjh/projects/PinealGland/data/Monkey_CNP0001469/"
+library(data.table)
+exp_count <- fread(paste0(datapath, "Matrix_Pineal_gland.txt"), header = F)
+
+genename <- exp_count$V1
+exp_count$V1 <- NULL 
+
+exp_count <- as.data.frame(lapply(exp_count,as.numeric)) 
+rownames(exp_count) <- genename
+
+### meta data 
+metadata <- read.table(paste0(datapath,"Metadata_Pineal_gland.txt"),  
+                       sep = "\t", header = T)
+colnames(exp_count) <- rownames(metadata)
+
+
+##### b.Consctruct Object ####### 
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+
+pr_name <- "monkey pineal gland scRNA-seq  Analysis"
+min_cell <- 3 # filter: at least express in 3 cells
+min_gene <- 5 
+Or_ident <- metadata$Tissue
+table(Or_ident)
+#   PinealGland_Day1   PinealGland_Day2 PinealGland_Night1 PinealGland_Night2
+#   2582               3560               4574               3993
+mt_pattern<-"^MT-"
+rb_pattern<-"^RPL|^RPS"
+
+Aggregated_seurat <- CreateFirstFilterSeuratObject(exp_count, pr_name, Or_ident, min_cell, 
+																									 min_gene, mt_pattern, rb_pattern)
+
+dim(Aggregated_seurat) # 17761 gene * 14501 cell
+Aggregated_seurat$percent.mt <- metadata$percent.mt
+Aggregated_seurat$batch <- metadata$Batch
+Aggregated_seurat$celltype_paper <- metadata$Celltype
+Aggregated_seurat$cluster_paper <- metadata$seurat_clusters
+
+pituitary_marker <- c("CRHR1",  "GHRHR", "PRL", "TSHB", "TRHR",  "LHB", "FSHB", "POMC")
+
+VlnPlot(Aggregated_seurat, features = pituitary_marker)
+###### c. Cell Quality Control #####
+
+Aggregated_seurat <- CellCycleScoring(object = Aggregated_seurat, 
+                                      s.features = cc.genes$s.genes, 
+                                      g2m.features = cc.genes$g2m.genes)
+# QC 
+QC(Aggregated_seurat, "Monkey_pineal_gland_scRNA_seq_unfilter")
+
+### 
+Aggregated_seurat <- subset(Aggregated_seurat, nCount_RNA < 15000 &
+                              nFeature_RNA < 5500 & nFeature_RNA > 200  & percent.mt < 10 &
+                              percent.rb < 20 )
+table(Aggregated_seurat$orig.ident)
+# Pineal_gland 
+# 14499
+dim(Aggregated_seurat) #  17761 * 14499
+QC(Aggregated_seurat, "Monkey_pineal_gland_scRNA_seq_filter")
+print(levels(Aggregated_seurat$orig.ident)) 
+
+###### d. SelectPcs  #####
+DefaultAssay(Aggregated_seurat) <- "RNA"
+Aggregated_seurat <- NormalizeData(Aggregated_seurat, normalization.method = "LogNormalize",
+                                   scale.factor = 10000)
+Aggregated_seurat <- FindVariableFeatures(Aggregated_seurat, 
+                                          selection.method = "vst", nfeatures = 3000)
+Aggregated_seurat <- ScaleData(Aggregated_seurat)
+Aggregated_seurat <- RunPCA(Aggregated_seurat, pc.genes = Aggregated_seurat@var.genes, 
+                            npcs = 100, verbose = FALSE)
+
+condition <- "Monkey_pineal_gland_scRNA_seq_filter"
+npc_plot <- 100
+selected_pcs_name <- paste0(condition,"_Selected_PCs.pdf")
+pdf(file = selected_pcs_name, height = 8, width = 8)
+print(ElbowPlot(object = Aggregated_seurat, ndims = npc_plot, reduction = "pca"))
+dev.off()
+
+# Plot 
+pca_plot_name <- paste0(condition, "_PCA_plot",".pdf")
+pdf(pca_plot_name,8,8)
+print(DimPlot(Aggregated_seurat,reduction="pca",label = TRUE,pt.size=1.1,group.by="ident",shape.by="orig.ident"))
+dev.off()
+
+## 25 pcs
+###### e. remove batch effect #######
+
+##### harmony 方法 
+# Eliminate batch effects with harmony and cell classification
+options(repr.plot.height = 2.5, repr.plot.width = 6)
+library(harmony)
+Aggregated_seurat <- Aggregated_seurat %>% RunHarmony("batch", plot_convergence = TRUE)
+
+Aggregated_seurat <- Aggregated_seurat %>% 
+  RunTSNE(reduction = "harmony", dims = 1:25) %>% 
+  RunUMAP(reduction = "harmony", dims = 1:25) %>% 
+  FindNeighbors(reduction = "harmony", dims = 1:25) %>% 
+  FindClusters(resolution = 0.5) %>% 
+  identity()
+
+new.cluster.ids <- as.numeric(levels(Aggregated_seurat)) + 1
+names(new.cluster.ids) <- levels(Aggregated_seurat)
+Aggregated_seurat <- RenameIdents(Aggregated_seurat, new.cluster.ids)
+
+DimPlot(Aggregated_seurat, group.by = "celltype_paper", reduction = "tsne", label = T)
+
+DimPlot(Aggregated_seurat, group.by = "ident", reduction = "tsne", label = T)
+
+Aggregated_seurat$seurat_clusters <- Aggregated_seurat@active.ident
+Aggregated_seurat@active.ident <- factor(Aggregated_seurat$celltype_paper)
+
+###### f. topmaker of each cluster #######
+FindmarkerForCluster <- function(exp_count.seurat,condition){
+  folder_name="4.DEGsBetweenCluster"
+  if (file.exists(folder_name)){
+    print("3.DEGsBetweenCluster file existed.")
+  }
+  else{
+    dir.create(folder_name)
+  } 
+  
+  exp_count.markers <- FindAllMarkers(object = exp_count.seurat, 
+                                      only.pos = TRUE, 
+                                      min.pct = 0.5, logfc.threshold = 0.5)
+  index <- exp_count.markers$p_val_adj < 0.05 
+  exp_count.markers <- exp_count.markers[index,]
+  save_name <- paste0(condition,"_DEGsbetweenClusters.csv")
+  write.csv(exp_count.markers,save_name)
+  
+  file.copy(save_name, folder_name,overwrite = T)
+  file.remove(save_name)
+  return(exp_count.markers)
+}
+
+condition <- paste0("Monkey_pineal_gland_scRNA_seq", "cluster")
+Cluster_markers <- FindmarkerForCluster(Aggregated_seurat, condition)
+
+condition <- "Monkey_pineal_gland_scRNA_seq_celltype"
+top_num <- 20
+TopMarkersInClusters <- TopMarkersInCluster(Cluster_markers,condition,top_num)
+
+########### g.Remove doublets #########
+
+library(DoubletFinder)
+sweep.res.list_hypo <- paramSweep_v3(Aggregated_seurat, PCs = 1:25)
+sweep.stats_hypo <- summarizeSweep(sweep.res.list_hypo, GT = FALSE)
+bcmvn_hypo <- find.pK(sweep.stats_hypo)
+mpK<-as.numeric(as.vector(bcmvn_hypo$pK[which.max(bcmvn_hypo$BCmetric)]))
+# 0.2
+
+## Homotypic Doublet Proportion Estimate 
+annotations <- Aggregated_seurat@active.ident
+homotypic.prop <- modelHomotypic(annotations)
+
+nExp_poi <- round(0.046*ncol(Aggregated_seurat@assays$RNA@data))
+nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
+
+## Run DoubletFinder with varying classification stringencies 
+seurat_filterDouble <- doubletFinder_v3(Aggregated_seurat, PCs = 1:25, 
+                                        pN = 0.25, pK = mpK, nExp = nExp_poi,
+                                        reuse.pANN = FALSE, sct = T)
+
+head(seurat_filterDouble@meta.data)
+write.csv(seurat_filterDouble@meta.data,"20220605_Monkey_pineal_gland__harmony_project_0.046.csv")
+# Aggregated_seurat <- seurat_filterDouble
+Aggregated_seurat$doublets <- seurat_filterDouble$DF.classifications_0.25_0.005_667
+
+
+p0 <- DimPlot(Aggregated_seurat, reduction = "umap", group.by='doublets',  label = T)
+
+Aggregated_seurat <- subset(Aggregated_seurat, doublets %in% c("Singlet"))
+
+
+condition <- "20220605_monkey_pineal_gland_celltype"
+Cluster_markers <- FindmarkerForCluster(Aggregated_seurat, condition)
+
+condition <- "20220605_monkey_pineal_gland_celltype"
+top_num <- 20
+TopMarkersInClusters <- TopMarkersInCluster(Cluster_markers,condition,top_num)
+
+Aggregated_seurat$celltype_assign <- Aggregated_seurat@active.ident
+saveRDS(Aggregated_seurat, "20220606_monkey_pineal_gland.rds")
+```
+
+### Generate Main Fig 1E/F
+```{r  Generate Figs 1E/F echo = FALSE, message=FALSE}
+#### clustering #####
+pdf("20220605_monkey_pineal_gland_scRNA_seq_clustering.pdf", 8, 8)
+DimPlot(Aggregated_seurat, group.by = "celltype_assign", reduction = "tsne",
+        label = T) + NoLegend()
+dev.off()
+
+#### celltype barplot ##### 
+
+setwd("/Users/zhengyiyi/Desktop/AJI/Other/PinealGland/CrossSpeciesAnalysis/Results/EachSpeciesSeuratAnalysis")
+
+Aggregated_seurat <- readRDS("/Users/zhengyiyi/Desktop/AJI/Other/PinealGland/CrossSpeciesAnalysis/Results/RDS/20220606_monkey_pineal_gland.rds")
+
+Aggregated_seurat$orig.ident <- Aggregated_seurat$batch
+
+cellnum <- as.data.frame(table(Aggregated_seurat$celltype_assign, 
+                               Aggregated_seurat$orig.ident))
+
+plot_data <- data.frame(cellnum = cellnum$Freq,
+                        cellpercentage = c(cellnum$Freq[1:8]/sum(cellnum$Freq[1:8]),
+                                           cellnum$Freq[9:16]/sum(cellnum$Freq[9:16]),
+                                           cellnum$Freq[17:24]/sum(cellnum$Freq[17:24])),
+                        group = cellnum$Var2,
+                        celltype = cellnum$Var1)
+plot_data$cellpercentage <- plot_data$cellpercentage * 100
+
+plot_data$celltype <- factor(plot_data$celltype ,
+                             levels = levels(Aggregated_seurat$celltype_assign))
+
+write.xlsx(plot_data, "20220605_monkey_pinealgland_cellpercentage.xlsx", 
+           rowNames = T, colNames = T, overwrite = T)
+
+plot_data$celltype <- factor(plot_data$celltype  ,
+                             levels = c(levels(Aggregated_seurat$celltype_assign)[1:3],
+                                        levels(Aggregated_seurat$celltype_assign)[6:8],
+                                        levels(Aggregated_seurat$celltype_assign)[4:5]))
+
+library(RColorBrewer)
+col1 <- brewer.pal(8,"Set3")
+col1[2] <-  brewer.pal(12,"Set3")[12]
+
+library(ggplot2)
+
+p <- ggplot(plot_data, aes(x=group,y=cellpercentage,fill=celltype)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_classic() 
+p1 <- p + theme(axis.text.x = element_text(size = 5, color = "black", face="bold"),
+                axis.text.y = element_text(size = 5, color = "black", face="bold"))
+p1 <- p1 + ggtitle("Monkey pinealgland") 
+p1 <- p1 + theme(plot.title = element_text(hjust = 0.5))
+p1 <- p1 + theme(plot.title = element_text(size = 10))
+p1 <- p1 + xlab("") + ylab("Percentage of celltype")
+p1 <- p1 + theme(axis.title.x = element_text(size = 10)) # x轴字体大小
+p1 <- p1 + theme(axis.title.y = element_text(size = 10)) # y轴字体大小
+p1 <- p1 + scale_fill_manual(values=col1[c(1:3, 6:8, 4:5)])
+p1 <- p1 + scale_y_continuous(breaks=seq(0,100,25), 
+                              expand = c(0,0))
+
+pdf("220725_monkey_pinealgland_cellpercentage_barplot.pdf", 3, 6)
+p1
+dev.off()
+
+saveRDS(Aggregated_seurat, "20220606_monkey_pineal_gland.rds")
+write.csv(rownames(Aggregated_seurat), "monkey_genes.csv")
+
+###### dotplot marker ####
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220725_FigPic_Clustering/")
+monkey_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+markers <- c("DCN", "COL3A1", "COL1A2", "ABCA9",
+             "SPARCL1", "APOE", "S100B", "SPARC",
+             "CFAP54", "HTR2C", "SLC39A12", "PDZRN3",
+             "HBB", "H2AFZ", "TAGLN2", "TUBB",
+             "LRP1B", "NCAM2", "COL9A1", "IL1RAPL1",
+             "DPP10", "RBFOX1", "DSCAM", "PLCB1",
+             "TTN", "IMPG2", "MAP2", "RIMS2",
+             "ST6GALNAC3", "ARHGAP15", "A2M", "CSF1R")
+
+VlnPlot(monkey_rds, features = c("ST6GALNAC3", "ARHGAP15", "A2M", "CSF1R"), ncol =2)
+
+monkey_rds$celltype_assign <- factor(as.character(monkey_rds$celltype_assign),
+                                     levels = rev(c("VLMCs", "Astrocyte", "Neuron", "Cycling cell",
+                                                    "Oligodendrocyte2", "Oligodendrocyte1", "Pinealocyte",
+                                                    "Microglia")))
+
+p_dotplot <- DotPlot(monkey_rds, features = markers,
+                     group.by = "celltype_assign",
+                     col.min = 0, col.max = 2)
+p_dotplot <- p_dotplot + coord_flip()
+p_dotplot <- p_dotplot + scale_colour_gradient2(low = "lightgrey",high = "Red",
+                                                midpoint = 1,breaks=c(0, 1, 2), label = c(0, 1, 2))
+p_dotplot <- p_dotplot + theme(axis.text.x = element_text(size = 10,
+                                                          vjust = 0.5, hjust = 0.5, angle = 45))
+#p_dotplot <- p_dotplot + theme(axis.text.y = element_blank(), axis.title.y = element_blank(),
+                              # axis.title.x = element_blank() )
+p_dotplot_no <- p_dotplot + NoLegend()
+
+ggsave("20220725_monkey_pineal_gland_celltypemarker_DotPlot.pdf", 
+       plot = p_dotplot, width = 10, height = 9)
+
+##### 5.top20 marker Cluster Dendrogram ######
+
+TopMarkersInClusters <- read.csv("4.DEGsBetweenCluster/20220725_monkey_pineal_gland_top_marker20.csv", row.names = 1)
+TopMarkersInClusters$cluster <- gsub( "Oligodendrocyte", "Oligodendrocyte2", TopMarkersInClusters$cluster)
+TopMarkersInClusters$cluster <- gsub( "Endothelial", "Oligodendrocyte1", TopMarkersInClusters$cluster)
+Variable_gene <- unique(TopMarkersInClusters$gene)
+hclust_exp <- t(monkey_rds@assays$RNA@data[Variable_gene, ])
+
+hclust_exp_mean <- aggregate(hclust_exp,  
+                             by = list(celltype = as.character(monkey_rds$celltype_assign)), 
+                             mean)
+
+celltypenames <- hclust_exp_mean$celltype
+hclust_exp_mean <- hclust_exp_mean[, -1]
+rownames(hclust_exp_mean) <- celltypenames
+
+
+library(factoextra)
+library(igraph)
+bc.scaled <- scale(hclust_exp_mean)
+d <- dist(bc.scaled)
+fit1 <- hclust(d, method = "ward.D2")
+plot(fit1,hang = -1,cex=.8,main = "title")
+
+p1 <- fviz_dend(fit1, k=4, rect =T, rect_fill = T,horiz = F,
+                rect_border = c("#2E9FDF", "#00AFBB", "#E7B800", "#FC4E07"))
+p1 
+
+plots <- plot_grid(p1, p_dotplot_no, ncol = 1, rel_heights = c(0.2, 1), align = "v")
+
+pdf("20220725_monkey_pineal_gland_cluster_dendrogram_ward_D2_topmarker_20_with_dotplotmarker.pdf", 10, 8)
+plots
+dev.off()
+
+saveRDS(plots, "20230209_monkey_dotplot_cluster.rds")
+
+```
+# 20230209 generate fig1 dotplot part
+```{r generate fig1 dotplot part}
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221020_Figure1/")
+
+library(cowplot)
+library(ggplot2)
+zebrafish_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_zebrafish_dotplot_cluster.rds")
+rat_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20230209_rat_dotplot_cluster.rds")
+monkey_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220725_FigPic_Clustering/20230209_monkey_dotplot_cluster.rds")
+
+zebrafish_p <- zebrafish_p & theme(axis.text.x = element_blank(), axis.title.x = element_blank())
+
+plots <- plot_grid(zebrafish_p, rat_p, monkey_p, ncol = 3, rel_heights = c(1, 1, 1), align = "h")
+
+ggsave(filename = "20230209_pinealgland_fig1_dotplot_name.pdf", plot = plots, height = 10, width = 20)
+
+
+```
+# 20230209 generate qc figs as the sup Fig1
+
+```{r generate qc figs as the sup Fig1B}
+
+#### zebrafish
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/")
+#dir.create("20230209_ZebrafishSupFig1")
+setwd("20230209_ZebrafishSupFig1")
+library(Seurat)
+seuratobject <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+
+seuratobject$celltype_assign <- factor(as.character(seuratobject$celltype_assign ),
+																	levels = c("Rod-like photoreceptors",  "Cone-like photoreceptors","Retinal pigment epithelium-like",
+																						 "Muller glia-like", "Microglia",  "Neuron","VLMCs",  "Endothelial"))
+
+col_used <- c("#80B1D3", "#FDB462",  "#89B00F",  "#FB8072",
+																 "#BEBADA", "#FCCDE5", "#8DD3C7", "#FFED6F")
+
+p1 <- VlnPlot(object = seuratobject, features = c("nFeature_RNA", "nCount_RNA", 
+                                                        "percent.mt","percent.rb"), 
+ 						pt.size=0,  group.by = "celltype_assign", ncol = 4, 
+							cols = col_used)
+pdf("20230209_zebrafish_pinealgland_sup_fig1_quality_control.pdf", width = 14, height = 6)
+p1
+dev.off()
+saveRDS(p1, "zebrafish_qc_p1.rds")
+
+#### rat
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis")
+#dir.create("20230209_RatSupFig1")
+setwd("20230209_RatSupFig1")
+library(Seurat)
+seuratobject <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+
+seuratobject$celltype_assign <- factor(as.character(seuratobject$celltype_assign ),
+																	levels = c("α-pinealocyte",  "β-pinealocyte",
+																						 "Astrocyte", "Microglia",  "VLMCs",  "Endothelial"))
+
+col_used <- c("#FDB462", "#80B1D3",  "#FB8072",  "#BEBADA", "#8DD3C7", "#FFED6F")
+
+p1 <- VlnPlot(object = seuratobject, features = c("nFeature_RNA", "nCount_RNA", 
+                                                        "percent.mt","percent.rb"), 
+ 							ncol = 4, pt.size=0, group.by = "celltype_assign", cols = col_used)
+pdf("20230209_rat_pinealgland_sup_fig1_quality_control.pdf", width = 14, height = 6)
+p1
+dev.off()
+saveRDS(p1, "rat_qc_p1.rds")
+
+#### monkey
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis")
+#dir.create("20230209_MonkeySupFig1")
+setwd("20230209_MonkeySupFig1")
+library(Seurat)
+seuratobject <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+seuratobject$celltype_assign <- factor(as.character(seuratobject$celltype_assign ),
+																	levels = c("Pinealocyte",  "Astrocyte",
+																						 "Cycling cell", "Neuron",  "Oligodendrocyte2",  "Microglia",
+																						 "Oligodendrocyte1", "VLMCs"))
+
+col_used <- c("#80B1D3", "#FB8072",  "#B3DE69",  "#FCCDE5", "#FDB462", "#BEBADA", "#FFED6F", "#8DD3C7")
+
+p1 <- VlnPlot(object = seuratobject, features = c("nFeature_RNA", "nCount_RNA", 
+                                                  "percent.mt","percent.rp"), 
+ 						pt.size=0,  group.by = "celltype_assign", ncol = 4, cols = col_used)
+pdf("20230209_monkey_pinealgland_sup_fig1_quality_control.pdf", width = 14, height = 6)
+p1
+dev.off()
+saveRDS(p1, "monkey_qc_p1.rds")
+
+##### combined
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230209_SupFig1_Res")
+
+library(cowplot)
+library(ggplot2)
+zebrafish_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20230209_ZebrafishSupFig1/zebrafish_qc_p1.rds")
+rat_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20230209_RatSupFig1/rat_qc_p1.rds")
+monkey_p <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20230209_MonkeySupFig1/monkey_qc_p1.rds")
+
+plots <- plot_grid(zebrafish_p, rat_p, monkey_p, ncol = 1, rel_heights = c(1.8, 1.4, 1.4))
+
+ggsave(filename = "20230209_pinealgland_sup_fig1.pdf", plot = plots, height = 13, width = 16)
+
+
+
+
+
+```
+
+# PinealIntegratedAnalysis
+#### Ortholog gene selection
+
+```{r Ortholog gene selection, echo = FALSE}
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/OrthologGene")
+
+zebrafish_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+rat_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+monkey_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+dd <- unique(union(toupper(rownames(rat_rds)), rownames(monkey_rds)))
+length(dd)
+
+genenames <- list(zebrafish = rownames(zebrafish_rds), rat = rownames(rat_rds), monkey = rownames(monkey_rds),
+									rat_monkey = dd)
+write.xlsx(genenames, "therespecies_allgene.xlsx", colNames = T, rowNames = T)
+rm(dd)
+
+#### 1.monkey to rat ###
+### biomart transvert ####
+library(biomaRt)
+listMarts()
+mart <- useMart("ensembl")
+dataset_list=as.data.frame(listDatasets(mart)) # 215
+
+zebrafish <- useMart('ensembl',dataset = "drerio_gene_ensembl")
+dd <- listAttributes(zebrafish)
+searchDatasets(mart = mart, pattern = "zebrafish")
+
+get2sp_orth_gene <- function(ref=NULL, que=NULL, gene.use=NULL,
+                          a.ref=NULL, f.ref="external_gene_name",
+                          a.que=NULL, uniqueRows=T,
+                          host = "https://dec2021.archive.ensembl.org/"){
+  
+a.ref <- unique(c("ensembl_gene_id","external_gene_name",a.ref))
+a.que <- unique(c("external_gene_name",a.que))
+
+mref <- useEnsembl("ensembl", dataset = ref, host = host)
+mque <- useEnsembl("ensembl", dataset = que, host = host)
+
+if (is.null(gene.use)) {
+g1 <- getBM(attributes = c("external_gene_name"), mart = useEnsembl("ensembl",dataset = que, host = host), uniqueRows = F)
+g2 <- g1$external_gene_name
+}else{
+g2 <- gene.use
+}
+
+gene.out <- getLDS(attributes = a.ref, filters = f.ref, values = g2, mart = mref,
+                   attributesL = a.que, martL = mque, uniqueRows = F)
+
+nref <- length(a.ref)
+nque <- length(a.que)
+
+recol <- colnames(gene.out)
+recol[1:2] <- c('ref.gene_ID','ref.gene_name')
+recol[nref+1] <- 'que.gene_name'
+
+colnames(gene.out) <- recol
+gene.out$ref.specice <- ref
+gene.out$que.specice <- que
+return(gene.out)
+}
+
+
+
+length(unique(genenames$rat)) # 17024
+a.que <- c("rnorvegicus_homolog_orthology_type", "rnorvegicus_homolog_goc_score",
+					 "rnorvegicus_homolog_wga_coverage", "rnorvegicus_homolog_perc_id_r1")
+monTorat_biomart <- get2sp_orth_gene(ref = "rnorvegicus_gene_ensembl", que="mfascicularis_gene_ensembl", 
+																					a.que = a.que, uniqueRows=F)
+
+head(monTorat_biomart)
+length(unique(monTorat_biomart$que.gene_name)) # 13070
+length(unique(monTorat_biomart$ref.gene_name)) # 13098
+
+index <- monTorat_biomart$que.gene_name != ""
+monTorat_biomart <- monTorat_biomart[index, ]
+monTorat_biomart <- monTorat_biomart[!duplicated(monTorat_biomart$que.gene_name), ]
+rownames(monTorat_biomart) <- monTorat_biomart$que.gene_name
+
+### NCBI ####
+library(homologene)
+homologene::taxData
+monTorat_homologene <- homologene(genenames$monkey, inTax = 9544, outTax = 10116)
+length(unique(monTorat_homologene$`9544`)) # 9143
+monTorat_homologene <- monTorat_homologene[!duplicated(monTorat_homologene$`9544`), ]
+rownames(monTorat_homologene) <- monTorat_homologene$`9544`
+
+mon_rat_genetable <- matrix(0, length(unique(genenames$monkey)), ncol(monTorat_biomart))
+mon_rat_genetable <- as.data.frame(mon_rat_genetable)
+colnames(mon_rat_genetable) <- colnames(monTorat_biomart)
+rownames(mon_rat_genetable) <- genenames$monkey
+
+samegene <- intersect(monTorat_biomart$que.gene_name, rownames(mon_rat_genetable))
+length(samegene) #11084
+mon_rat_genetable[samegene, ] <- monTorat_biomart[samegene, ]
+index <- mon_rat_genetable$que.gene_name=="0" # 5797
+
+
+samegene <- intersect(monTorat_homologene$`9544`, rownames(mon_rat_genetable))
+length(samegene) #9143
+mon_rat_genetable$NCBI_map <- NULL
+mon_rat_genetable[samegene, "NCBI_map"] <- monTorat_homologene[samegene, ]$`10116`
+
+library(Hmisc)
+
+mon_rat_genetable$OriginalRatgene_map <- NULL
+index <- capitalize(tolower(rownames(mon_rat_genetable))) %in% genenames$rat
+mon_rat_genetable$OriginalRatgene_map[index] <- capitalize(tolower(rownames(mon_rat_genetable)))[index]
+mon_rat_genetable <- mon_rat_genetable[, c(3, 2, 1, 10, 11, 4:9)]
+
+mon_rat_genetable$final_genename <- mon_rat_genetable$OriginalRatgene_map
+
+index <- is.na(mon_rat_genetable$final_genename)
+mon_rat_genetable$final_genename[index] <- mon_rat_genetable$ref.gene_name[index]
+
+index <- mon_rat_genetable$final_genename=="0"
+mon_rat_genetable$final_genename[index] <- mon_rat_genetable$NCBI_map[index]
+
+write.xlsx(mon_rat_genetable, "mon_rat_genetable.xlsx", colNames = T, rowNames = T)
+
+#### 2. zebrafish to rat ####
+### biomart transvert ####
+length(unique(genenames$zebrafish)) # 25291
+a.que <- c("rnorvegicus_homolog_orthology_type", "rnorvegicus_homolog_goc_score",
+					 "rnorvegicus_homolog_perc_id_r1")
+zebraTorat_biomart <- get2sp_orth_gene(ref = "rnorvegicus_gene_ensembl", que="drerio_gene_ensembl", 
+																					a.que = a.que, uniqueRows = FALSE, gene.use = genenames$zebrafish)
+
+head(zebraTorat_biomart)
+length(unique(zebraTorat_biomart$que.gene_name)) # 8980
+length(unique(zebraTorat_biomart$ref.gene_name)) # 8263
+
+index <- zebraTorat_biomart$que.gene_name != ""
+zebraTorat_biomart <- zebraTorat_biomart[index, ]
+zebraTorat_biomart <- zebraTorat_biomart[!duplicated(zebraTorat_biomart$que.gene_name), ]
+rownames(zebraTorat_biomart) <- zebraTorat_biomart$que.gene_name
+zebraTorat_biomart <- arrange(zebraTorat_biomart, zebraTorat_biomart$que.gene_name)
+
+### NCBI ####
+library(homologene)
+homologene::taxData
+zebraTorat_homologene <- homologene(genenames$zebrafish, inTax = 7955, outTax = 10116, db = homologene::homologeneData)
+length(unique(zebraTorat_homologene$`7955`)) # 8627
+zebraTorat_homologene <- zebraTorat_homologene[!duplicated(zebraTorat_homologene$`7955`), ]
+rownames(zebraTorat_homologene) <- zebraTorat_homologene$`7955`
+
+zebra_rat_genetable <- matrix(0, length(unique(genenames$zebrafish)), ncol(zebraTorat_biomart))
+zebra_rat_genetable <- as.data.frame(zebra_rat_genetable)
+colnames(zebra_rat_genetable) <- colnames(zebraTorat_biomart)
+rownames(zebra_rat_genetable) <- genenames$zebrafish
+
+samegene <- intersect(zebraTorat_biomart$que.gene_name, rownames(zebra_rat_genetable))
+length(samegene) #8295
+zebra_rat_genetable[samegene, ] <- zebraTorat_biomart[samegene, ]
+
+index <- zebra_rat_genetable$que.gene_name=="0" # 16996
+
+
+samegene <- intersect(zebraTorat_homologene$`7955`, rownames(zebra_rat_genetable))
+length(samegene) #8627
+zebra_rat_genetable$NCBI_map <- NULL
+zebra_rat_genetable[samegene, "NCBI_map"] <- zebraTorat_homologene[samegene, ]$`10116`
+
+zebra_rat_genetable$final_genename <- zebra_rat_genetable$ref.gene_name
+
+index <- zebra_rat_genetable$final_genename=="0"
+zebra_rat_genetable$final_genename[index] <- zebra_rat_genetable$NCBI_map[index]
+write.xlsx(zebra_rat_genetable, "zebrafish_rat_genetable.xlsx", colNames = T, rowNames = T)
+
+
+```
+
+### Clustering-celltypeidentification
+```{r Seurat Analysis, echo = FALSE}
+### We performed gene homology search, using biomart
+### Each species was compared to rat
+### table: PinealGland_zebrafish_rat_monkey_gene.xlsx
+##########---------------2. Integrated Analysis ##################
+########### a.Construct Homology Exp ##############
+
+### 1) zebrafish ####
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis")
+
+zebrafish_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+
+
+## just select gene expressed >= 30 cells
+zebrafish_gene <- read.xlsx("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/OrthologGene/PinealGlandSpeciesGeneName_Map_to_Ratgene.xlsx", sheet = 2)
+rownames(zebrafish_gene) <- zebrafish_gene$ZebrafishGenename
+
+index <- rowSums(zebrafish_rds@assays$RNA@counts > 0)
+zebra_selectgenename <- intersect(rownames(zebrafish_rds@assays$RNA@counts), zebrafish_gene$ZebrafishGenename)
+
+gene_list <- list( zebrafish= zebra_selectgenename)
+try <- calc_var_ratio(seurat_obj = zebrafish_rds, species = "zebrafish", gene_list)
+
+zebrafish_exp <- zebrafish_rds@assays$RNA@counts[zebra_selectgenename, ]
+zebrafish_gene <- zebrafish_gene[zebra_selectgenename, ]
+all.equal(rownames(zebrafish_exp), zebrafish_gene$ZebrafishGenename)
+
+dupgene <- zebrafish_gene$HomologyGene[duplicated(zebrafish_gene$HomologyGene)]
+dupgene <- unique(dupgene)
+length(dupgene) # 1474
+
+uniquegene <- setdiff(unique(zebrafish_gene$HomologyGene), dupgene)
+length(uniquegene)
+
+dupgene_exp <- matrix(0, length(dupgene), ncol(zebrafish_exp))
+for(i in 1:length(dupgene)){
+  index <- which(zebrafish_gene$HomologyGene %in% dupgene[i])
+  temp_gene <- zebrafish_gene$ZebrafishGenename[index]
+  temp_exp <- as.matrix(zebrafish_exp[temp_gene, ])
+  temp_exp <- t(as.matrix(colSums(temp_exp)))
+  dupgene_exp[i, ] <- temp_exp
+}
+
+rownames(dupgene_exp) <- dupgene
+colnames(dupgene_exp) <- colnames(zebrafish_exp)
+
+index <- which(zebrafish_gene$HomologyGene %in% uniquegene)
+uniqueexp <- as.matrix(zebrafish_exp[zebrafish_gene$ZebrafishGenename[index], ])
+rownames(uniqueexp) <- zebrafish_gene$HomologyGene[index]
+
+final_zebrafish_exp <- rbind(uniqueexp, dupgene_exp)
+dim(final_zebrafish_exp)
+
+zebrafish_res <- list(HomologyExp = final_zebrafish_exp, zebrafish_original_exp = zebrafish_exp,
+                      meta = zebrafish_rds@meta.data)
+saveRDS(zebrafish_res, "20221115_zebrafish_homologyexp.rds")
+
+####### 2) rat #####
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/IntegratedAnalysis/SeuratAnalysis")
+
+rat_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/Rat/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+
+### just select genes expressed >= 30
+index <- rowSums(rat_rds@assays$RNA@counts > 0)
+rat_selectgenename <- rownames(rat_rds@assays$RNA@counts)[index >= 30]
+length(rat_selectgenename) # 11615
+
+rat_exp <- rat_rds@assays$RNA@counts[rat_selectgenename, ]
+
+index <- grep("NEWGENE", rownames(rat_exp))
+rownames(rat_exp)[index]
+rat_exp <- rat_exp[-index, ]
+
+rat_res <- list(rat_exp = rat_exp,
+                meta = rat_rds@meta.data)
+saveRDS(rat_res, "20221115_rat_exp.rds")
+
+###### 3) monkey ####
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/IntegratedAnalysis/SeuratAnalysis")
+
+monkey_rds <- readRDS("/home/zhengjh/projects/PinealGland/analysis/Monkey/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+## just select gene expressed >= 30 cells
+monkey_gene <- read.xlsx("/home/zhengjh/projects/PinealGland/analysis/IntegratedAnalysis/OrthologGene/PinealGlandSpeciesGeneName_Map_to_Ratgene.xlsx", sheet = 3)
+
+rownames(monkey_gene) <- monkey_gene$MonkeyGenename
+index <- rowSums(monkey_rds@assays$RNA@counts > 0)
+genes <- intersect(rownames(monkey_rds@assays$RNA@counts)[index >= 30],
+									 monkey_gene$MonkeyGenename)
+monkey_exp <- monkey_rds@assays$RNA@counts[genes, ]
+monkey_gene <- monkey_gene[genes, ]
+all.equal(rownames(monkey_exp), monkey_gene$MonkeyGenename)
+
+HomologyExp <- monkey_exp
+rownames(HomologyExp) <- monkey_gene$HomologyGene
+dim(HomologyExp) # 12949 genes * 13832 cells
+monkey_res <- list(monkey_exp = monkey_exp,
+									 HomologyExp = HomologyExp,
+                   meta = monkey_rds@meta.data)
+
+saveRDS(monkey_res, "20221115_monkey_homologyexp.rds")
+
+####### b.combine exp of there species and do clustering and then remove batch effect #######
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/IntegratedAnalysis/SeuratAnalysis")
+
+zebrafish_res <- readRDS("20221115_zebrafish_homologyexp.rds") # 3549 cell
+dim(zebrafish_res$HomologyExp)
+rat_res <- readRDS("20221115_rat_exp.rds")  # 5050 cell
+dim(rat_res$rat_exp)
+monkey_res <- readRDS("20221115_monkey_homologyexp.rds") # 13832 cell
+dim(monkey_res$HomologyExp)
+
+zebrafish_res$HomologyExp <- as.data.frame(zebrafish_res$HomologyExp)
+zebrafish_res$HomologyExp$genename <- rownames(zebrafish_res$HomologyExp)
+
+rat_res$rat_exp <- as.data.frame(rat_res$rat_exp)
+rat_res$rat_exp$genename <- rownames(rat_res$rat_exp)
+
+monkey_res$HomologyExp <- as.data.frame(monkey_res$HomologyExp)
+monkey_res$HomologyExp$genename <- rownames(monkey_res$HomologyExp)
+
+samegene <- Reduce(union, list(df1 = zebrafish_res$HomologyExp$genename,
+                               df2 = rat_res$rat_exp$genename,
+                               df3 = monkey_res$HomologyExp$genename))
+length(samegene) # 15782 gene
+
+data_list <- list(samegene = data.frame(genename = samegene),
+                  zebrafish = zebrafish_res$HomologyExp,
+                  rat = rat_res$rat_exp,
+                  monkey = monkey_res$HomologyExp)
+
+combined_exp <- Reduce(function(x,y) merge(x, y, by="genename", all.x=TRUE), data_list, accumulate =FALSE)
+rownames(combined_exp) <- combined_exp$genename
+combined_exp$genename <- NULL
+rm(data_list)
+
+## NA-->0
+combined_exp[is.na(combined_exp)] <- 0
+
+all.equal(colnames(combined_exp), c(rownames(zebrafish_res$meta), 
+                                    rownames(rat_res$meta), 
+                                    rownames(monkey_res$meta)))
+
+
+meta <- data.frame(orig.ident = c(rep("zebrafish", 3549), rep("rat", 5050), rep("monkey", 13832)),
+                   celltype = c(as.character(zebrafish_res$meta$celltype_assign),
+                                as.character(rat_res$meta$celltype_assign),
+                                as.character(monkey_res$meta$celltype_assign)),
+                   batch = c(as.character(zebrafish_res$meta$orig.ident),
+                             as.character(rat_res$meta$orig.ident),
+                             as.character(monkey_res$meta$batch)))
+
+source("/home/zhengjh/scripts/seurat/function/SeuratWrapperFunction.R")
+
+rm(zebrafish_res, rat_res, monkey_res)
+
+##### c.Create seurat object #####
+pr_name <- "pineal gland sc_snRNA-seq  Analysis"
+min_cell <- 30
+min_gene <- 3
+Or_ident <- meta$orig.ident
+mt_pattern<-"^Mt-"
+rb_pattern<-"^Rpl|^Rps"
+table(Or_ident)
+
+# monkey       rat zebrafish 
+# 13832     5050      3549 
+Aggregated_seurat <- CreateFirstFilterSeuratObject(combined_exp, pr_name,
+																									 min_cell, min_gene, 
+																									 mt_pattern, rb_pattern)
+
+dim(Aggregated_seurat) # 7912 gene * 30852 cell
+Aggregated_seurat$batch <- meta$batch
+Aggregated_seurat$celltype <- meta$celltype
+Aggregated_seurat$orig.ident <- meta$orig.ident
+Aggregated_seurat$group <- Aggregated_seurat$orig.ident
+Aggregated_seurat$orig.ident <- Aggregated_seurat$batch
+
+saveRDS(Aggregated_seurat, "20221115_PinealGland_Integrated_Aggregated_seurat.rds")
+
+######### d. run 2022115_PinealGland_IntegrateThreeSpecies.sh SCTtransform method 
+
+setwd("/home/zhengjh/projects/PinealGland/analysis/IntegratedAnalysis/SeuratAnalysis")
+Aggregated_seurat.sct <- readRDS("Pinealgland_threespecies_integrated_sctnorm_final_cca_integrate_seurat.rds")
+
+######### e.Celltype Check ###########
+Aggregated_seurat.sct$group <- factor(as.character(Aggregated_seurat.sct$group),
+																			levels = c("zebrafish", "rat", "monkey"))
+DimPlot(Aggregated_seurat.sct, group.by = "celltype", split.by = "group")
+
+index <- as.character(Aggregated_seurat.sct$group) ==  "monkey" & as.character(Aggregated_seurat.sct$celltype) == "Endothelial"
+Aggregated_seurat.sct$celltype[index] <- "Oligodendrocyte"
+
+DimPlot(Aggregated_seurat.sct, group.by = "celltype", split.by = "group", reduction = "umap")
+
+saveRDS(Aggregated_seurat.sct, "20221116_Final_Pinealgland_threespecies_integrated_sctnorm_final_cca_integrate_seurat.rds")
+
+```
+
+### Generate Main Fig 1A-D
+```{r Generate Main Fig 1A-D, echo = FALSE}
+####### d.generate Figure 1A-D ##############
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/")
+Aggregated_seurat <- readRDS("20221116_Final_Pinealgland_threespecies_integrated_sctnorm_final_cca_integrate_seurat.rds")
+
+DefaultAssay(Aggregated_seurat) <- "RNA"
+
+####### 1) Figure1A/B clustering  #######
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/5.FinalFigure1_Plots")
+
+aa <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+Oligodendrocyte1_cell <- colnames(aa)[as.character(aa$celltype_assign)=="Oligodendrocyte1"]
+Oligodendrocyte2_cell <- colnames(aa)[as.character(aa$celltype_assign)=="Oligodendrocyte2"]
+Aggregated_seurat$celltype[colnames(Aggregated_seurat) %in% Oligodendrocyte1_cell] <- "Oligodendrocyte1"
+Aggregated_seurat$celltype[colnames(Aggregated_seurat) %in% Oligodendrocyte2_cell] <- "Oligodendrocyte2"
+
+Aggregated_seurat$celltype <- gsub("−","-", Aggregated_seurat$celltype)
+Aggregated_seurat@active.ident <- factor(Aggregated_seurat$celltype)
+
+theme1 <- theme_bw()  + theme(panel.grid.major=element_blank(), panel.grid.minor=element_blank(),# 移除bw主题的网格线
+                              # axis.text = element_blank(), axis.ticks = element_blank(),
+                              #axis.title = element_blank(), # 去除X  Y 轴tick text tittle
+                              plot.title = element_text(hjust = 0.5)) # 主题居中
+
+
+levels_redefine <- c("VLMCs", "Endothelial", "Microglia", "Cycling cell",
+                     "Oligodendrocyte1",  "Oligodendrocyte2", "Neuron",
+                     "Astrocyte", "Muller glia-like","Retinal pigment epithelium-like",
+                     "Rod-like photoreceptors", "Cone-like photoreceptors" ,
+                      "α-pinealocyte", "β-pinealocyte" , "Pinealocyte" )
+
+Aggregated_seurat$celltype <- factor(as.character(Aggregated_seurat$celltype), levels = levels_redefine)
+
+cols_used <- c("#CEA213", "#7F7A47", "#BEBADA", "#BE8CEA", "#FDB462",
+               "#FDB462", "#FCCDE5", "#A01815", "#52C1AC", "#FB8072",
+               "#80B1D3", "#80B1D3", "#80B1D3", "#80B1D3", "#80B1D3")
+
+p2 <- DimPlot(Aggregated_seurat, group.by  = "celltype", reduction = "umap", split.by = "group",
+              cols = cols_used, label = T, raster = F, pt.size = 0.5) + theme1 
+
+ggsave(filename = "20230216_PinealGland_intergrated_Clustering.pdf", p2, width = 15, height = 6)
+levels(Aggregated_seurat$celltype)
+
+saveRDS(Aggregated_seurat, "/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20230216_monkey_pineal_gland_recelltype.rds")
+
+##### 2) Figure1C cellpercentage figures ########
+
+cellnum <- as.data.frame(table(Aggregated_seurat$group, Aggregated_seurat$celltype))
+str(cellnum)
+colnames(cellnum) <- c("species", "celltype", "value")
+
+totalnum <- aggregate(cellnum$value, by = list(species = cellnum$species), sum)
+
+cellnum$totalsum <- 0
+for(i in 1:3){
+  index <- cellnum$species==totalnum[i,1]
+  cellnum$totalsum[index] <- totalnum[i,2]
+}
+
+cellnum$cellpercentage <- cellnum$value/cellnum$totalsum
+cellnum$cellpercentage <- cellnum$cellpercentage * 100
+cols_used <- c("#EA871B", "#08B594", "#80B1D3", "#4FBBC9", "#EAC306",
+               "#C64227", "#E6737B", "#889CC5", "#43B19F", "#B286A9",
+               "#C18BB6", "#DBAFD2", "#B769A3", "#7E57B5")
+
+cellnum$celltype <- factor(as.character(cellnum$celltype),
+                           levels = levels_redefine)
+
+
+library(ggplot2)
+p <- ggplot(cellnum, aes(x=species,y=cellpercentage,fill=celltype)) +
+  geom_bar(stat = "identity", position = "stack") +
+  theme_classic() 
+p1 <- p + theme(axis.text.x = element_text(size = 5, color = "black", face="bold"),
+                axis.text.y = element_text(size = 5, color = "black", face="bold"))
+p1 <- p1 + ggtitle("pinealgland celltype subtype") 
+p1 <- p1 + theme(plot.title = element_text(hjust = 0.5))
+p1 <- p1 + theme(plot.title = element_text(size = 10))
+p1 <- p1 + xlab("") + ylab("Percentage of celltype")
+p1 <- p1 + theme(axis.title.x = element_text(size = 10)) # x轴字体大小
+p1 <- p1 + theme(axis.title.y = element_text(size = 10)) # y轴字体大小
+p1 <- p1 + scale_fill_manual(values=cols_used)
+p1 <- p1 + scale_y_continuous( breaks=seq(0,100,25), 
+                               expand = c(0,0))
+
+p1 <- p1 + theme(axis.text.x = element_text(angle = 45,vjust = 0.5,hjust = 0.5))
+
+ggsave(filename = "20221116_PinealGland_Fig1_C_Cellpercentage.pdf", p1, width = 5, height = 5)
+
+cell_res <- list(cellnum = table(Aggregated_seurat$orig.ident, Aggregated_seurat$celltype),
+                 cellpercentage = cellnum)
+
+write.xlsx(cell_res, "20221116_final_pinealgland_cellnum.xlsx", colNames = T, rowNames = T)
+
+##### 3) Figure 1D Cross-species Pairwise Cluster Correlations ###
+dir.create("CrossSpeciesPairwiseClusterCorrelation")
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/5.FinalFigure1_Plots")
+Aggregated_seurat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/20230216_Final_Pinealgland_threespecies_integrated_sctnorm_final_cca_integrate_seurat_recelltype.rds")
+
+setwd("CrossSpeciesPairwiseClusterCorrelation")
+
+DefaultAssay(Aggregated_seurat) <- "RNA"
+Aggregated_seurat@active.ident <- factor(Aggregated_seurat$celltype)
+
+zebrafish <- subset(Aggregated_seurat, group %in% c("zebrafish"))
+rat <- subset(Aggregated_seurat, group %in% c("rat"))
+monkey <- subset(Aggregated_seurat, group %in% c("monkey"))
+
+DefaultAssay(zebrafish) <- "RNA"
+DefaultAssay(rat) <- "RNA"
+DefaultAssay(monkey) <- "RNA"
+
+zebrafish <- NormalizeData(zebrafish)
+rat <- NormalizeData(rat)
+monkey <- NormalizeData(monkey)
+
+zebrafish@assays$integrated <- NULL
+rat@assays$integrated <- NULL
+monkey@assays$integrated <- NULL
+
+table(zebrafish@active.ident)
+table(rat@active.ident)
+table(monkey@active.ident)
+
+AvgExpSpecies <- function(species1_marker, species2_marker, species1_object, species2_object){
+  
+  intersect_markers <- intersect(species1_marker$gene, species2_marker$gene) #568
+  species1_avgexp <- AverageExpression(species1_object, group.by = "ident", features = intersect_markers, assays = "RNA")
+  species2_avgexp <- AverageExpression(species2_object, group.by = "ident", features = intersect_markers, assays = "RNA")
+  
+  Sp1 = as.data.frame(species1_avgexp$RNA[rowSums(as.matrix(species1_avgexp$RNA))!=0,])
+  colnames(Sp1) <- paste0("Sp1_", colnames(Sp1) )
+  Sp2 = as.data.frame(species2_avgexp$RNA[rowSums(as.matrix(species2_avgexp$RNA))!=0,])
+  colnames(Sp2) <- paste0("Sp2_", colnames(Sp2) )
+  
+  nDESp1 = length(species1_marker$gene)
+  nDESp2 = length(species2_marker$gene)
+  avg_list <- list(species1_avgexp = Sp1,
+                   species2_avgexp = Sp2,
+                   nDESp1 = nDESp1,
+                   nDESp2 = nDESp2,
+                   intersect_markers = intersect_markers)
+  return(avg_list)
+}
+
+CorrCompareFunction <- function(Sp1, Sp2, intersect_markers, nDESp1, nDESp2){
+  
+  #Step5: Scale Expression Tables by gene average
+  avg = rowMeans(Sp1)
+  Sp1 = sweep(Sp1,1,avg,"/")
+  rm(avg)
+  
+  avg = rowMeans(Sp2)
+  Sp2 = sweep(Sp2,1,avg,"/")
+  rm(avg)
+  
+  #Step6: Merge Expression Tables
+  geTable = merge(Sp1,Sp2, by='row.names', all=F)
+  rownames(geTable) = geTable$Row.names
+  geTable = geTable[,2:ncol(geTable)]
+  
+  #Step7:  Correlation
+  #7a:  Correlation
+  corr.method <- "spearman"
+  Corr.Coeff.Table = cor(geTable, method=corr.method)
+  
+  #7b:  Shuffle data
+  shuffled.cor.list = list()
+  pb   <- txtProgressBar(1, 100, style=3)
+  nPermutations <- 1000
+  for (i in 1:nPermutations){
+    shuffled = apply(geTable[,1:ncol(Sp1)],1,sample)
+    shuffled2 = apply(geTable[,(ncol(Sp1)+1):ncol(geTable)],1,sample)
+    shuffled = cbind(t(shuffled),t(shuffled2))
+    shuffled.cor = cor(shuffled, method=corr.method)
+    shuffled.cor.list[[i]] = shuffled.cor
+    rm(list=c('shuffled','shuffled2','shuffled.cor'))
+    if ((i %% 100) ==0){
+      setTxtProgressBar(pb, (i*100)/nPermutations)
+    }
+  }
+  
+  p.value.table = matrix(ncol=ncol(geTable), nrow = ncol(geTable))
+  rownames(p.value.table) = colnames(geTable)
+  colnames(p.value.table) = colnames(geTable)
+  
+  shuffled.mean.table = matrix(ncol=ncol(geTable), nrow = ncol(geTable))
+  rownames(shuffled.mean.table) = colnames(geTable)
+  colnames(shuffled.mean.table) = colnames(geTable)
+  
+  a = combn(1:ncol(geTable),2)
+  for (i in 1:ncol(a)){
+    cor.scores = sapply(shuffled.cor.list,"[",a[1,i],a[2,i])
+    shuffled.mean.table[a[1,i],a[2,i]] = mean(cor.scores)
+    shuffled.mean.table[a[2,i],a[1,i]] = mean(cor.scores)
+    p.value = mean(abs(cor.scores)>=abs(Corr.Coeff.Table[a[1,i],a[2,i]]))
+    p.value.table[a[1,i],a[2,i]] = p.value
+    p.value.table[a[2,i],a[1,i]] = p.value
+    rm(list=c('cor.scores','p.value'))
+    setTxtProgressBar(pb, (i*100)/ncol(a))
+  }
+  
+  p.value.table[p.value.table==0] <- 0.000001
+  neg.log10.p = -log10(p.value.table)
+  
+  #step8 "Overlap in Markers"
+  #for all pairs of cell-types generate list of genes that are at least 1.5x avg in both cells
+  
+  #from above a = combn(1:ncol(geTable),2)
+  marker.overlap.list = list()
+  for (i in 1:ncol(a)){
+    datasubset = cbind(geTable[,a[1,i]],geTable[,a[2,i]])
+    markers = rownames(geTable[datasubset[,1]>1 & datasubset[,2]>1,])
+    marker.overlap.list[[i]] = markers
+    names(marker.overlap.list)[i] = paste(colnames(geTable)[a[1,i]], colnames(geTable)[a[2,i]],sep='_')
+    rm(list=c('datasubset','markers'))
+  }
+  
+  
+  allgene.list.to.return = list(Corr.Coeff.Table,shuffled.mean.table,
+                                p.value.table,neg.log10.p,
+                                intersect_markers,
+                                rownames(geTable),
+                                length(intersect_markers),
+                                length(rownames(geTable)),nDESp1, nDESp2, geTable,marker.overlap.list)
+  names(allgene.list.to.return) = c('corr.coeff','shuffled_correlation_score_means',
+                                    'p.value', 
+                                    'negative_log10_p.value',
+                                    'DEgenes_intersect',
+                                    'DEgenes_in_analysis',
+                                    'nDEgenes_intersect',
+                                    'nDEgenes_in_analysis',
+                                    'nDEgenes_Sp1','nDEgenes_Sp2',
+                                    'scaled_table','overlapping_markers')
+  return(allgene.list.to.return)
+}
+
+### topmarker gene of each species
+DefaultAssay(zebrafish) <- "RNA"
+zebrafish.markers <- FindAllMarkers(object = zebrafish, 
+                                    only.pos = TRUE, 
+                                    min.pct = 0.1, logfc.threshold = 0.25,
+                                    test.use = "wilcox")
+DefaultAssay(rat) <- "RNA"
+rat.markers <- FindAllMarkers(object = rat, 
+                              only.pos = TRUE, 
+                              min.pct = 0.1, logfc.threshold = 0.25,
+                              test.use = "wilcox")
+
+monkey@active.ident <- factor(monkey$celltype)
+DefaultAssay(monkey) <- "RNA"
+monkey.markers <- FindAllMarkers(object = monkey, 
+                                 only.pos = TRUE, 
+                                 min.pct = 0.1, logfc.threshold = 0.25,
+                                 test.use = "wilcox")
+
+zebrafish.markers$TF_label <- zebrafish.markers$gene %in% TF$Genename
+rat.markers$TF_label <- rat.markers$gene %in% TF$Genename
+monkey.markers$TF_label <- monkey.markers$gene %in% TF$Genename
+
+
+zebrafish.markers <- zebrafish.markers[zebrafish.markers$p_val_adj < 0.05, ]
+rat.markers <- rat.markers[rat.markers$p_val_adj < 0.05, ]
+monkey.markers <- monkey.markers[monkey.markers$p_val_adj < 0.05, ]
+table(zebrafish.markers$cluster)
+table(rat.markers$cluster)
+table(monkey.markers$cluster)
+
+
+res <- list(zebrafish.markers = zebrafish.markers, rat.markers = rat.markers, monkey.markers= monkey.markers)
+
+write.xlsx(res, "20221123_pinealgland_each_speices_celltype_markers_min_pct_0.1_logfc_0.25.xlsx", colNames = T, rowNames = T)
+
+##### TF list of topmarker gene 
+TF <- read.xlsx("Rat_TF.xlsx") # 1387 TF
+length(TF$Genename)
+
+#### zebrafish
+DefaultAssay(zebrafish) <- "RNA"
+zebrfish_tf <- intersect(rownames(zebrafish), TF$Genename)
+length(zebrfish_tf) # 1046
+zebrafish.tf.markers <- FindAllMarkers(object = zebrafish, 
+                                       only.pos = TRUE, 
+                                       min.pct = 0.1, logfc.threshold = 0.25,
+                                       test.use = "wilcox", features = zebrfish_tf)
+#### rat
+DefaultAssay(rat) <- "RNA"
+rat_tf <- intersect(rownames(rat), TF$Genename)
+length(rat_tf) # 1046
+rat.tf.markers <- FindAllMarkers(object = rat, 
+                                 only.pos = TRUE, 
+                                 min.pct = 0.1, logfc.threshold = 0.25,
+                                 test.use = "wilcox", features = rat_tf)
+
+#### monkey 
+DefaultAssay(monkey) <- "RNA"
+monkey_tf <- intersect(rownames(monkey), TF$Genename)
+length(monkey_tf) # 1046
+monkey.tf.markers <- FindAllMarkers(object = monkey, 
+                                    only.pos = TRUE, 
+                                    min.pct = 0.1, logfc.threshold = 0.25,
+                                    test.use = "wilcox", features = monkey_tf)
+
+zebrafish.tf.markers <- zebrafish.tf.markers[zebrafish.tf.markers$p_val_adj < 0.05, ]
+rat.tf.markers <- rat.tf.markers[rat.tf.markers$p_val_adj < 0.05, ]
+monkey.tf.markers <- monkey.tf.markers[monkey.tf.markers$p_val_adj < 0.05, ]
+table(zebrafish.tf.markers$cluster)
+table(rat.tf.markers$cluster)
+table(monkey.tf.markers$cluster)
+
+##### 3) Figure 1D cellsimilarity ####
+######## 1. zebrafish vs rat #######
+###### all gene  
+allgene_zebra_rat_avg_res <- AvgExpSpecies(zebrafish.markers, rat.markers, zebrafish, rat)
+Sp1 <- allgene_zebra_rat_avg_res$species1_avgexp
+Sp2 <- allgene_zebra_rat_avg_res$species2_avgexp
+intersect_markers <- allgene_zebra_rat_avg_res$intersect_markers
+nDESp1 <- allgene_zebra_rat_avg_res$nDESp1
+nDESp2 <- allgene_zebra_rat_avg_res$nDESp2
+allgene_zebra_rat_corr_res <- CorrCompareFunction(Sp1, Sp2,intersect_markers,nDESp1,nDESp2)
+
+### tf
+tf_zebra_rat_avg_res <- AvgExpSpecies(zebrafish.tf.markers, rat.tf.markers, zebrafish, rat)
+Sp1 <- tf_zebra_rat_avg_res$species1_avgexp
+Sp2 <- tf_zebra_rat_avg_res$species2_avgexp
+intersect_markers <- tf_zebra_rat_avg_res$intersect_markers
+nDESp1 <- tf_zebra_rat_avg_res$nDESp1
+nDESp2 <- tf_zebra_rat_avg_res$nDESp2
+tf_zebra_rat_corr_res <- CorrCompareFunction(Sp1, Sp2,intersect_markers,nDESp1,nDESp2)
+
+######## 2. zebrafish vs monkey #######
+###### all gene  
+allgene_zebra_monkey_avg_res <- AvgExpSpecies(zebrafish.markers, monkey.markers, zebrafish, monkey)
+Sp1 <- allgene_zebra_monkey_avg_res$species1_avgexp
+Sp2 <- allgene_zebra_monkey_avg_res$species2_avgexp
+intersect_markers <- allgene_zebra_monkey_avg_res$intersect_markers
+nDESp1 <- allgene_zebra_monkey_avg_res$nDESp1
+nDESp2 <- allgene_zebra_monkey_avg_res$nDESp2
+allgene_zebra_monkey_corr_res <- CorrCompareFunction(Sp1, Sp2, intersect_markers, nDESp1, nDESp2)
+
+### tf
+tf_zebra_monkey_avg_res <- AvgExpSpecies(zebrafish.tf.markers, monkey.tf.markers, zebrafish, monkey)
+Sp1 <- tf_zebra_monkey_avg_res$species1_avgexp
+Sp2 <- tf_zebra_monkey_avg_res$species2_avgexp
+intersect_markers <- tf_zebra_monkey_avg_res$intersect_markers
+nDESp1 <- tf_zebra_monkey_avg_res$nDESp1
+nDESp2 <- tf_zebra_monkey_avg_res$nDESp2
+tf_zebra_monkey_corr_res <- CorrCompareFunction(Sp1, Sp2,intersect_markers,nDESp1,nDESp2)
+
+######## 3. rat vs monkey #######
+###### all gene  
+allgene_rat_monkey_avg_res <- AvgExpSpecies(rat.markers, monkey.markers, rat, monkey)
+Sp1 <- allgene_rat_monkey_avg_res$species1_avgexp
+Sp2 <- allgene_rat_monkey_avg_res$species2_avgexp
+intersect_markers <- allgene_rat_monkey_avg_res$intersect_markers
+nDESp1 <- allgene_rat_monkey_avg_res$nDESp1
+nDESp2 <- allgene_rat_monkey_avg_res$nDESp2
+allgene_rat_monkey_corr_res <- CorrCompareFunction(Sp1, Sp2,intersect_markers,nDESp1,nDESp2)
+
+### tf
+tf_rat_monkey_avg_res <- AvgExpSpecies(rat.tf.markers, monkey.tf.markers, rat, monkey)
+Sp1 <- tf_rat_monkey_avg_res$species1_avgexp
+Sp2 <- tf_rat_monkey_avg_res$species2_avgexp
+intersect_markers <- tf_rat_monkey_avg_res$intersect_markers
+nDESp1 <- tf_rat_monkey_avg_res$nDESp1
+nDESp2 <- tf_rat_monkey_avg_res$nDESp2
+tf_rat_monkey_corr_res <- CorrCompareFunction(Sp1, Sp2,intersect_markers, nDESp1, nDESp2)
+
+corr_total_res <- list(allgene_zebra_rat_corr_res = allgene_zebra_rat_corr_res,
+                       allgene_zebra_monkey_corr_res = allgene_zebra_monkey_corr_res,
+                       allgene_rat_monkey_corr_res = allgene_rat_monkey_corr_res,
+                       tf_zebra_rat_corr_res = tf_zebra_rat_corr_res,
+                       tf_zebra_monkey_corr_res = tf_zebra_monkey_corr_res,
+                       tf_rat_monkey_corr_res = tf_rat_monkey_corr_res)
+
+saveRDS(corr_total_res, "20230604_corr_total_res_min_pct_0.1_logFC_0.25.rds")
+
+######## 20221018 Fig1D cellsimilarity ###########
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/5.FinalFigure1_Plots/CrossSpeciesPairwiseClusterCorrelation")
+
+corr_total_res <- readRDS("20230604_corr_total_res_min_pct_0.1_logFC_0.25.rds")
+
+## corr
+colnames(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff) <- gsub("Sp1", "Zebrafish", 
+                                                                       colnames(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff))
+colnames(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff) <- gsub("Sp2", "Rat", 
+                                                                       colnames(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff))
+
+rownames(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff) <- gsub("Sp1", "Zebrafish", 
+                                                                       rownames(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff))
+rownames(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff) <- gsub("Sp2", "Rat", 
+                                                                       rownames(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff))
+
+colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff) <- gsub("Sp1", "Zebrafish", 
+                                                                       colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))
+colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff) <- gsub("Sp2", "Monkey", 
+                                                                       colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))
+
+rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff) <- gsub("Sp1", "Zebrafish", 
+                                                                       rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))
+rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff) <- gsub("Sp2", "Monkey", 
+                                                                       rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))
+
+colnames(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff) <- gsub("Sp1", "Rat", 
+                                                                          colnames(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff))
+colnames(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff) <- gsub("Sp2", "Monkey", 
+                                                                          colnames(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff))
+
+rownames(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff) <- gsub("Sp1", "Rat", 
+                                                                          rownames(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff))
+rownames(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff) <- gsub("Sp2", "Monkey", 
+                                                                          rownames(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff))
+
+## p.value
+colnames(corr_total_res$allgene_zebra_rat_corr_res$p.value) <- gsub("Sp1", "Zebrafish", 
+																																			 colnames(corr_total_res$allgene_zebra_rat_corr_res$p.value))
+colnames(corr_total_res$allgene_zebra_rat_corr_res$p.value) <- gsub("Sp2", "Rat", 
+																																			 colnames(corr_total_res$allgene_zebra_rat_corr_res$p.value))
+
+rownames(corr_total_res$allgene_zebra_rat_corr_res$p.value) <- gsub("Sp1", "Zebrafish", 
+																																			 rownames(corr_total_res$allgene_zebra_rat_corr_res$p.value))
+rownames(corr_total_res$allgene_zebra_rat_corr_res$p.value) <- gsub("Sp2", "Rat", 
+																																			 rownames(corr_total_res$allgene_zebra_rat_corr_res$p.value))
+
+colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value) <- gsub("Sp1", "Zebrafish", 
+																																					colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))
+colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value) <- gsub("Sp2", "Monkey", 
+																																					colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))
+
+rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value) <- gsub("Sp1", "Zebrafish", 
+																																					rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))
+rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value) <- gsub("Sp2", "Monkey", 
+																																					rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))
+
+colnames(corr_total_res$allgene_rat_monkey_corr_res$p.value) <- gsub("Sp1", "Rat", 
+																																				colnames(corr_total_res$allgene_rat_monkey_corr_res$p.value))
+colnames(corr_total_res$allgene_rat_monkey_corr_res$p.value) <- gsub("Sp2", "Monkey", 
+																																				colnames(corr_total_res$allgene_rat_monkey_corr_res$p.value))
+
+rownames(corr_total_res$allgene_rat_monkey_corr_res$p.value) <- gsub("Sp1", "Rat", 
+																																				rownames(corr_total_res$allgene_rat_monkey_corr_res$p.value))
+rownames(corr_total_res$allgene_rat_monkey_corr_res$p.value) <- gsub("Sp2", "Monkey", 
+																																				rownames(corr_total_res$allgene_rat_monkey_corr_res$p.value))
+
+
+##### 1 ####
+library(corrplot)
+
+plotdata_1 <- as.matrix(corr_total_res$allgene_zebra_rat_corr_res$corr.coeff)
+
+##### 2 ####
+reorder_row <-  rownames(plotdata_1)[grep("Zebrafish",  rownames(plotdata_1))]
+reorder_col <- colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))]
+
+plotdata_2 <- as.matrix(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+##### 3 ####
+reorder_row <-  rownames(plotdata_1)[grep("Rat",  rownames(plotdata_1))]
+reorder_col <- colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))]
+plotdata_3 <- as.matrix(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+##### 4 ####
+reorder_row <- rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))]
+
+reorder_col <- rownames(plotdata_1)[grep("Zebrafish",  rownames(plotdata_1))]
+
+plotdata_4 <- as.matrix(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+##### 5 ####
+reorder_row <- rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))]
+
+reorder_col <- rownames(plotdata_1)[grep("Rat",  rownames(plotdata_1))]
+
+plotdata_5 <- as.matrix(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+##### 6 ####
+reorder_row <- rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", rownames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))]
+
+reorder_col <- colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", colnames(corr_total_res$allgene_zebra_monkey_corr_res$corr.coeff))]
+
+
+plotdata_6 <- as.matrix(corr_total_res$allgene_rat_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+
+plot_data_11 <- cbind(plotdata_4, plotdata_5)
+
+plot_data_22 <- rbind(plotdata_2, plotdata_3, plotdata_6)
+
+plot_data <- rbind(plotdata_1, plot_data_11)
+
+plot_data <- cbind(plot_data, plot_data_22)
+
+
+### p value
+##### 1 ####
+library(corrplot)
+
+p_1 <- as.matrix(corr_total_res$allgene_zebra_rat_corr_res$p.value)
+
+##### 2 ####
+reorder_row <-  rownames(p_1)[grep("Zebrafish",  rownames(p_1))]
+reorder_col <- colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value)[grep("Monkey", colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))]
+
+p_2 <- as.matrix(corr_total_res$allgene_zebra_monkey_corr_res$p.value[reorder_row, reorder_col])
+
+##### 3 ####
+reorder_row <-  rownames(p_1)[grep("Rat",  rownames(p_1))]
+reorder_col <- colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value)[grep("Monkey", colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))]
+p_3 <- as.matrix(corr_total_res$allgene_rat_monkey_corr_res$p.value[reorder_row, reorder_col])
+
+##### 4 ####
+reorder_row <- rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value)[grep("Monkey", rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))]
+
+reorder_col <- rownames(p_1)[grep("Zebrafish",  rownames(p_1))]
+
+p_4 <- as.matrix(corr_total_res$allgene_zebra_monkey_corr_res$p.value[reorder_row, reorder_col])
+
+##### 5 ####
+reorder_row <- rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value)[grep("Monkey", rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))]
+
+reorder_col <- rownames(p_1)[grep("Rat",  rownames(p_1))]
+
+p_5 <- as.matrix(corr_total_res$allgene_rat_monkey_corr_res$p.value[reorder_row, reorder_col])
+
+##### 6 ####
+reorder_row <- rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value)[grep("Monkey", rownames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))]
+
+reorder_col <- colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value)[grep("Monkey", colnames(corr_total_res$allgene_zebra_monkey_corr_res$p.value))]
+
+
+p_6 <- as.matrix(corr_total_res$allgene_rat_monkey_corr_res$p.value[reorder_row, reorder_col])
+
+
+p_11 <- cbind(p_4, p_5)
+
+p_22 <- rbind(p_2, p_3, p_6)
+
+p <- rbind(p_1, p_11)
+
+p <- cbind(p, p_22)
+
+p[is.na(p)] <- 0
+
+colnames(plot_data)
+final_plotdata <- as.matrix(plot_data * (p < 0.001))
+
+
+col1 <- colorRampPalette(c("darkblue", "white","darkred"))
+
+# pdf("20221018_PinealGland_CelltypeSimilarity.pdf", 10, 10)
+#corrplot(corr = plot_data,
+#         order="original",tl.pos="lt", method="color", 
+#         tl.col="black",col.lim = c(-1, 1), 
+#         is.corr=F,tl.cex=0.7, sig.level=(0.0001),
+#         insig="label_sig", pch=19, 
+#         pch.cex = 0.8,pch.col="black",
+#         col = col1(200),
+#         cl.align.text="l")
+#dev.off()
+write.csv(plot_data, "20230611_final_PinealGland_CelltypeSimilarity_corr_by_markers_min_0.1_logFC_0.25.csv")
+write.csv(p, "20230611_final_PinealGland_CelltypeSimilarity_pvalue_by_markers_min_0.1_logFC_0.25.csv")
+
+library(RColorBrewer)
+p1 <- pheatmap::pheatmap(final_plotdata, colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+												 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+												 border_color='NA', cluster_cols = T, cluster_rows = F)
+rownames(plot_data[p1$tree_col[["order"]],])
+plot_data_reorder <- plot_data[rownames(plot_data[p1$tree_col[["order"]],]), ]
+
+celltype <- rownames(plot_data_reorder)
+
+species_shortname <- c("R", "R", "Z", "Z", "Z", "M","M", "M","M","M","M","Z","R","Z","Z", "R", "M","Z", "R", "Z", "R","M")
+rownames(plot_data_reorder) <- species_shortname
+colnames(plot_data_reorder) <- species_shortname
+p2 <- pheatmap::pheatmap(plot_data_reorder, colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+												 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+												 border_color='NA', cluster_cols = T, cluster_rows = F)
+
+col_anno <-  data.frame(celltype = sapply(strsplit(celltype, "_"), "[", 2))
+
+levels_redefine <- c("α-pinealocyte", "β-pinealocyte", "Neuron", "Cone-like photoreceptors",
+										 "Rod-like photoreceptors", "Pinealocyte", "Oligodendrocyte1", "Oligodendrocyte2",
+										 "Microglia", "Cycling cell", "Muller glia−like", "Retinal pigment epithelium−like",
+										 "Astrocyte", "Endothelial", "VLMCs")
+
+col1 <- c("#80B1D3", "#80B1D3", "#FCCDE5", "#80B1D3", "#80B1D3", "#80B1D3",
+					"#FFED6F", "#FDB462", "#BEBADA", "#B3DE69", "#FB8072", "#89B00F",
+					"#FB8072", "#FFED6F", "#8DD3C7")
+
+names(col1) <- levels_redefine
+ann_colors = list(celltype = col1)
+rownames(col_anno) <- celltype
+rownames(plot_data_reorder) <- celltype
+colnames(plot_data_reorder) <- celltype
+p2 <- pheatmap::pheatmap(plot_data_reorder, colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+												 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+												 border_color='NA', cluster_cols = T, cluster_rows = F,
+												 annotation_row = col_anno, annotation_col = col_anno,
+												 annotation_colors = ann_colors, clustering_method = "complete")
+
+pdf("20230319_PinealGland_allcells_CelltypeSimilarity_col_cluster.pdf", 10, 8)
+print(p2)
+dev.off()
+
+
+######### TF
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/5.FinalFigure1_Plots/CrossSpeciesPairwiseClusterCorrelation")
+
+corr_total_res <- readRDS("corr_total_res_min_pct_0.1_logFC_0.5.rds")
+
+colnames(corr_total_res$tf_zebra_rat_corr_res$corr.coeff) <- gsub("Sp1", "Zebrafish", 
+                                                                       colnames(corr_total_res$tf_zebra_rat_corr_res$corr.coeff))
+colnames(corr_total_res$tf_zebra_rat_corr_res$corr.coeff) <- gsub("Sp2", "Rat", 
+                                                                       colnames(corr_total_res$tf_zebra_rat_corr_res$corr.coeff))
+
+rownames(corr_total_res$tf_zebra_rat_corr_res$corr.coeff) <- gsub("Sp1", "Zebrafish", 
+                                                                       rownames(corr_total_res$tf_zebra_rat_corr_res$corr.coeff))
+rownames(corr_total_res$tf_zebra_rat_corr_res$corr.coeff) <- gsub("Sp2", "Rat", 
+                                                                       rownames(corr_total_res$tf_zebra_rat_corr_res$corr.coeff))
+
+colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff) <- gsub("Sp1", "Zebrafish", 
+                                                                       colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))
+colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff) <- gsub("Sp2", "Monkey", 
+                                                                       colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))
+
+rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff) <- gsub("Sp1", "Zebrafish", 
+                                                                       rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))
+rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff) <- gsub("Sp2", "Monkey", 
+                                                                       rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))
+
+colnames(corr_total_res$tf_rat_monkey_corr_res$corr.coeff) <- gsub("Sp1", "Rat", 
+                                                                          colnames(corr_total_res$tf_rat_monkey_corr_res$corr.coeff))
+colnames(corr_total_res$tf_rat_monkey_corr_res$corr.coeff) <- gsub("Sp2", "Monkey", 
+                                                                          colnames(corr_total_res$tf_rat_monkey_corr_res$corr.coeff))
+
+rownames(corr_total_res$tf_rat_monkey_corr_res$corr.coeff) <- gsub("Sp1", "Rat", 
+                                                                          rownames(corr_total_res$tf_rat_monkey_corr_res$corr.coeff))
+rownames(corr_total_res$tf_rat_monkey_corr_res$corr.coeff) <- gsub("Sp2", "Monkey", 
+                                                                          rownames(corr_total_res$tf_rat_monkey_corr_res$corr.coeff))
+library(corrplot)
+
+plotdata_1 <- as.matrix(corr_total_res$tf_zebra_rat_corr_res$corr.coeff)
+
+##### 2 ####
+reorder_row <-  rownames(plotdata_1)[grep("Zebrafish",  rownames(plotdata_1))]
+reorder_col <- colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))]
+
+plotdata_2 <- as.matrix(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+##### 3 ####
+reorder_row <-  rownames(plotdata_1)[grep("Rat",  rownames(plotdata_1))]
+reorder_col <- colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))]
+plotdata_3 <- as.matrix(corr_total_res$tf_rat_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+##### 4 ####
+reorder_row <- rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))]
+
+reorder_col <- rownames(plotdata_1)[grep("Zebrafish",  rownames(plotdata_1))]
+
+plotdata_4 <- as.matrix(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+##### 5 ####
+reorder_row <- rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))]
+
+reorder_col <- rownames(plotdata_1)[grep("Rat",  rownames(plotdata_1))]
+
+plotdata_5 <- as.matrix(corr_total_res$tf_rat_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+##### 6 ####
+reorder_row <- rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", rownames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))]
+
+reorder_col <- colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff)[grep("Monkey", colnames(corr_total_res$tf_zebra_monkey_corr_res$corr.coeff))]
+
+
+plotdata_6 <- as.matrix(corr_total_res$tf_rat_monkey_corr_res$corr.coeff[reorder_row, reorder_col])
+
+
+plot_data_11 <- cbind(plotdata_4, plotdata_5)
+
+plot_data_22 <- rbind(plotdata_2, plotdata_3, plotdata_6)
+
+plot_data <- rbind(plotdata_1, plot_data_11)
+
+plot_data <- cbind(plot_data, plot_data_22)
+
+col1 <- colorRampPalette(c("darkblue", "white","darkred"))
+
+# pdf("20221018_PinealGland_CelltypeSimilarity.pdf", 10, 10)
+#corrplot(corr = plot_data,
+#         order="original",tl.pos="lt", method="color", 
+#         tl.col="black",col.lim = c(-1, 1), 
+#         is.corr=F,tl.cex=0.7, sig.level=(0.0001),
+#         insig="label_sig", pch=19, 
+#         pch.cex = 0.8,pch.col="black",
+#         col = col1(200),
+#         cl.align.text="l")
+#dev.off()
+write.csv(plot_data, "20230214_PinealGland_CelltypeSimilarity_plot_data_min_0.1_logFC_0.5_tf.csv")
+
+p1 <- pheatmap::pheatmap(plot_data, colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+												 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+												 border_color='NA', cluster_cols = F, cluster_rows = T, clustering_method = "single")
+rownames(plot_data[p1$tree_row[["order"]],])
+plot_data_reorder <- plot_data[, rownames(plot_data[p1$tree_row[["order"]],])]
+
+celltype <- rownames(plot_data_reorder)
+
+species_shortname <- c("R", "R", "Z", "Z", "Z", "M","M", "M","M","M","M","Z","R","Z","Z", "R", "M","Z", "R", "Z", "R","M")
+rownames(plot_data_reorder) <- species_shortname
+colnames(plot_data_reorder) <- species_shortname
+p2 <- pheatmap::pheatmap(plot_data_reorder, colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+												 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+												 border_color='NA', cluster_cols = F, cluster_rows = T, clustering_method = "single")
+
+col_anno <-  data.frame(celltype = sapply(strsplit(celltype, "_"), "[", 2))
+
+levels_redefine <- c("α-pinealocyte", "β-pinealocyte", "Neuron", "Cone-like photoreceptors",
+										 "Rod-like photoreceptors", "Pinealocyte", "Oligodendrocyte1", "Oligodendrocyte2",
+										 "Microglia", "Cycling cell", "Muller glia−like", "Retinal pigment epithelium−like",
+										 "Astrocyte", "Endothelial", "VLMCs")
+
+col1 <- c("#80B1D3", "#80B1D3", "#FCCDE5", "#80B1D3", "#80B1D3", "#80B1D3",
+					"#FFED6F", "#FDB462", "#BEBADA", "#B3DE69", "#FB8072", "#89B00F",
+					"#FB8072", "#FFED6F", "#8DD3C7")
+
+names(col1) <- levels_redefine
+ann_colors = list(celltype = col1)
+rownames(col_anno) <- celltype
+rownames(plot_data_reorder) <- celltype
+colnames(plot_data_reorder) <- celltype
+p2 <- pheatmap::pheatmap(plot_data_reorder, colorRampPalette(rev(brewer.pal(n = 7, name = "RdYlBu")))(10),
+												 breaks=c(seq(0, 0.3, length.out = 5), seq(0.3001, 1, length.out = 5)),
+												 border_color='NA', cluster_cols = F, cluster_rows = T,
+												 annotation_row = col_anno, annotation_col = col_anno,
+												 annotation_colors = ann_colors, clustering_method = "single")
+
+pdf("20230214_PinealGland_allcells_CelltypeSimilarity_col_cluster_tf.pdf", 10, 8)
+print(p2)
+dev.off()
+
+
+###### 细胞相似性基因 #####
+
+rm(list = ls())
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/5.FinalFigure1_Plots/CrossSpeciesPairwiseClusterCorrelation")
+
+corr_rds <- readRDS("corr_total_res_min_pct_0.1_logFC_0.25.rds")
+
+# object_rds <- readRDS("/Users/zhengyiyi/Desktop/AJI/Other/PinealGland/Results/RDS/20220726_PinealGland_ThreeSpecies_Analysis.rds")
+
+#### zebra vs rat ####
+zebra_rat <- do.call(cbind, lapply(lapply(corr_rds$allgene_zebra_rat_corr_res$overlapping_markers, unlist), 
+																	 `length<-`, max(lengths(corr_rds$allgene_zebra_rat_corr_res$overlapping_markers))))
+
+colnames(zebra_rat) <- gsub( "Sp1", "Zebrafish", colnames(zebra_rat))
+colnames(zebra_rat) <- gsub( "Sp2", "Rat",  colnames(zebra_rat))
+zebra_rat <- as.data.frame(zebra_rat)
+
+#### zebra vs monkey ####
+
+zebra_monkey <- do.call(cbind, lapply(lapply(corr_rds$allgene_zebra_monkey_corr_res$overlapping_markers, unlist), 
+																	 `length<-`, max(lengths(corr_rds$allgene_zebra_monkey_corr_res$overlapping_markers))))
+
+colnames(zebra_monkey) <- gsub( "Sp1", "Zebrafish", colnames(zebra_monkey))
+colnames(zebra_monkey) <- gsub( "Sp2", "Monkey",  colnames(zebra_monkey))
+zebra_monkey <- as.data.frame(zebra_monkey)
+#### rat vs monkey ####
+
+rat_monkey <- do.call(cbind, lapply(lapply(corr_rds$allgene_rat_monkey_corr_res$overlapping_markers, unlist), 
+																	 `length<-`, max(lengths(corr_rds$allgene_rat_monkey_corr_res$overlapping_markers))))
+
+colnames(rat_monkey) <- gsub( "Sp1", "Rat", colnames(rat_monkey))
+colnames(rat_monkey) <- gsub( "Sp2", "Monkey",  colnames(rat_monkey))
+rat_monkey <- as.data.frame(rat_monkey)
+
+
+celltype_gene <- list(zebra_rat = zebra_rat, zebra_monkey = zebra_monkey, rat_monkey = rat_monkey)
+library(openxlsx)
+write.xlsx(celltype_gene, "20230604_pinealgland_astrocyte_pinealcyte_celltype_gene_among_three_species.xlsx", 
+					 colNames = T, rowNames = T)
+
+## pinealcyte: zebrafish, rat, monkey
+a <- rownames(corr_rds$allgene_zebra_rat_corr_res$scaled_table)[corr_rds$allgene_zebra_rat_corr_res$scaled_table$`Sp1_Cone-like photoreceptors` > 0.5]
+b <- rownames(corr_rds$allgene_zebra_monkey_corr_res$scaled_table)[corr_rds$allgene_zebra_monkey_corr_res$scaled_table$`Sp1_Cone-like photoreceptors` > 0.5]
+zebrafish_cone_gene <- unique(union(a, b))
+
+a <- rownames(corr_rds$allgene_zebra_rat_corr_res$scaled_table)[corr_rds$allgene_zebra_rat_corr_res$scaled_table$`Sp1_Rod-like photoreceptors` > 0.5]
+b <- rownames(corr_rds$allgene_zebra_monkey_corr_res$scaled_table)[corr_rds$allgene_zebra_monkey_corr_res$scaled_table$`Sp1_Rod-like photoreceptors` > 0.5]
+zebrafish_rod_gene <- unique(union(a, b))
+
+a <- rownames(corr_rds$allgene_zebra_rat_corr_res$scaled_table)[corr_rds$allgene_zebra_rat_corr_res$scaled_table$`Sp2_α-pinealocyte` > 0.5]
+b <- rownames(corr_rds$allgene_rat_monkey_corr_res$scaled_table)[corr_rds$allgene_rat_monkey_corr_res$scaled_table$`Sp1_α-pinealocyte` > 0.5]
+rat_alpha_gene <- unique(union(a, b))
+
+a <- rownames(corr_rds$allgene_zebra_rat_corr_res$scaled_table)[corr_rds$allgene_zebra_rat_corr_res$scaled_table$`Sp2_β-pinealocyte` > 0.5]
+b <- rownames(corr_rds$allgene_rat_monkey_corr_res$scaled_table)[corr_rds$allgene_rat_monkey_corr_res$scaled_table$`Sp1_β-pinealocyte` > 0.5]
+rat_beta_gene <- unique(union(a, b))
+
+a <- rownames(corr_rds$allgene_zebra_monkey_corr_res$scaled_table)[corr_rds$allgene_zebra_monkey_corr_res$scaled_table$Sp2_Pinealocyte > 0.5]
+b <- rownames(corr_rds$allgene_rat_monkey_corr_res$scaled_table)[corr_rds$allgene_rat_monkey_corr_res$scaled_table$Sp2_Pinealocyte > 0.5]
+monkey_gene <- unique(union(a, b))
+
+
+genes <- list(zebrafish_cone_gene = zebrafish_cone_gene, zebrafish_rod_gene = zebrafish_rod_gene,
+							rat_alpha_gene = rat_alpha_gene, rat_beta_gene = rat_beta_gene, monkey_gene = monkey_gene )
+library(UpSetR)
+p1 <- upset(fromList(genes), nsets = 5, nintersects = 30, mb.ratio = c(0.5, 0.5),
+      order.by = c("freq"), decreasing = c(TRUE,FALSE))
+
+pdf("20230604_Pinealocyte_UpsetR__split_pinealocyte_subtype.pdf", width = 10, height = 8)
+p1
+dev.off()
+### 获取交集基因列表
+library(VennDiagram)
+inter <- get.venn.partitions(genes)
+for (j in 1:nrow(inter)) inter[j,'values'] <- paste(inter[[j,'..values..']], collapse = ', ')
+write.xlsx(inter, "202300604_Pinealcytes_IntersectGeneResults_split_pinealocyte_subtype.xlsx",  colNames = T, rowNames = T)
+
+
+###### 把亚型的基因合并在一起
+genes_combine <- list(zebrafish_gene = c(zebrafish_cone_gene, zebrafish_rod_gene), 
+							rat_gene = c(rat_alpha_gene, rat_beta_gene), monkey_gene = monkey_gene )
+
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res")
+write.xlsx(genes_combine, "202300604_Pinealcytes_celltype_gene.xlsx")
+
+library(RColorBrewer)
+p = venn.diagram(
+  x = genes_combine,
+  category.names = names(genes_combine),
+  # filename = 'venn.png',
+  filename = NULL,
+  output=TRUE,
+  fill = brewer.pal(3, "Set2"),
+  col = brewer.pal(3, "Set2"),
+  fontface = "bold",
+  cat.col = brewer.pal(3, "Set2"),
+  cat.fontface = "bold"
+)
+pdf("20230604_Pinealocyte_Venn_combine_pinealocyte_subtype_min_0.1_fc_0.25.pdf")
+grid.draw(p)
+dev.off()
+
+### 获取交集基因列表
+library(VennDiagram)
+inter <- get.venn.partitions(genes_combine)
+for (j in 1:nrow(inter)) inter[j,'values'] <- paste(inter[[j,'..values..']], collapse = ', ')
+write.xlsx(inter, "20230604_Pinealcytes_IntersectGeneResults_combine_pinealocyte_subtype_min_0.1_fc_0.25.xlsx",  colNames = T, rowNames = T)
+
+
+### Astrocyte 
+a <- rownames(corr_rds$allgene_zebra_rat_corr_res$scaled_table)[corr_rds$allgene_zebra_rat_corr_res$scaled_table$`Sp1_Muller glia-like` > 1]
+b <- rownames(corr_rds$allgene_zebra_monkey_corr_res$scaled_table)[corr_rds$allgene_zebra_monkey_corr_res$scaled_table$`Sp1_Muller glia-like` > 1]
+zebrafish_muller_gene <- unique(union(a, b))
+
+
+a <- rownames(corr_rds$allgene_zebra_rat_corr_res$scaled_table)[corr_rds$allgene_zebra_rat_corr_res$scaled_table$`Sp1_Retinal pigment epithelium-like` > 1]
+b <- rownames(corr_rds$allgene_zebra_monkey_corr_res$scaled_table)[corr_rds$allgene_zebra_monkey_corr_res$scaled_table$`Sp1_Retinal pigment epithelium-like` > 1]
+zebrafish_rpe_gene <- unique(union(a, b))
+
+
+a <- rownames(corr_rds$allgene_zebra_rat_corr_res$scaled_table)[corr_rds$allgene_zebra_rat_corr_res$scaled_table$Sp2_Astrocyte > 1]
+b <- rownames(corr_rds$allgene_rat_monkey_corr_res$scaled_table)[corr_rds$allgene_rat_monkey_corr_res$scaled_table$Sp1_Astrocyte> 1]
+rat_astro_gene <- unique(union(a, b))
+
+
+a <- rownames(corr_rds$allgene_zebra_monkey_corr_res$scaled_table)[corr_rds$allgene_zebra_monkey_corr_res$scaled_table$Sp2_Astrocyte > 1]
+b <- rownames(corr_rds$allgene_rat_monkey_corr_res$scaled_table)[corr_rds$allgene_rat_monkey_corr_res$scaled_table$Sp2_Astrocyte > 1]
+monkey_astro_gene <- unique(union(a, b))
+
+
+genes <- list(zebrafish_muller_gene = zebrafish_muller_gene, zebrafish_rpe_gene = zebrafish_rpe_gene,
+							rat_astro_gene = rat_astro_gene, monkey_astro_gene = monkey_astro_gene )
+
+library(RColorBrewer)
+p = venn.diagram(
+  x = genes,
+  category.names = names(genes),
+  # filename = 'venn.png',
+  filename = NULL,
+  output=TRUE,
+  fill = brewer.pal(4, "Set3"),
+  col = brewer.pal(4, "Set3"),
+  fontface = "bold",
+  cat.col = brewer.pal(4, "Set3"),
+  cat.fontface = "bold"
+)
+pdf("20230604_astrocyte_Venn_minpct_0.1_fc_0.25.pdf")
+grid.draw(p)
+dev.off()
+
+
+### 获取交集基因列表
+library(VennDiagram)
+inter <- get.venn.partitions(genes)
+for (j in 1:nrow(inter)) inter[j,'values'] <- paste(inter[[j,'..values..']], collapse = ', ')
+write.xlsx(inter, "20230604_astrocytes_IntersectGeneResults_minpct_0.1_fc_0.25.xlsx",  colNames = T, rowNames = T)
+
+
+```
+
+### MetaNeighbor Analysis
+```{r MetaNeighbor}
+
+rm(list = ls())
+library(scater)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/5.FinalFigure1_Plots/")
+dir.create("20221223_MetaNeighborAnalysis")
+setwd("20221223_MetaNeighborAnalysis")
+
+seurat_rds <- readRDS('/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/20221116_Final_Pinealgland_threespecies_integrated_sctnorm_final_cca_integrate_seurat.rds')
+
+DefaultAssay(seurat_rds) <- "RNA"
+dim(seurat_rds) # 15782 gene * 22075
+
+new_colData = data.frame(
+  study_id = as.character(seurat_rds$group),
+  cell_type = as.character(seurat_rds$celltype))
+
+metaneighbor_input <- SingleCellExperiment(seurat_rds@assays$RNA@data, colData = new_colData)
+dim(metaneighbor_input)
+rm(seurat_rds)
+
+var_genes = variableGenes(dat = metaneighbor_input, exp_labels = metaneighbor_input$study_id)
+
+celltype_NV = MetaNeighborUS(var_genes = var_genes,
+                             dat = metaneighbor_input,
+                             study_id = metaneighbor_input$study_id,
+                             cell_type = metaneighbor_input$cell_type,
+                             fast_version = TRUE)
+
+cols = rev(colorRampPalette(RColorBrewer::brewer.pal(11,"RdYlBu"))(100))
+breaks = seq(0, 1, length=101)
+pdf("20221223_pinealgland_celltype_similarity_metaneighbors.pdf", width = 10, height = 10)
+gplots::heatmap.2(celltype_NV,
+                  margins=c(8,8),
+                  keysize=1,
+                  key.xlab="AUROC",
+                  key.title="NULL",
+                  trace = "none",
+                  density.info = "none",
+                  col = cols,
+                  breaks = breaks,
+                  offsetRow=0.1,
+                  offsetCol=0.1,
+                  cexRow = 0.7,
+                  cexCol = 0.7)
+dev.off()
+
+```
+
+## 20230609 三个物种检测到的基因的交集，这个放到补充图里面，并计算这些匹配到的基因的可解释的方差
+```{r }
+rm(list = ls())
+
+library(Seurat)
+library(scScape)
+library(clustree)
+setwd("/home/zhengjh/projects/PinealGland/analysis/20230608_revised_Figure2_related_res")
+zebrafish <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/20221115_zebrafish_homologyexp.rds")
+rat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/20221115_rat_exp.rds")
+monkey <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/SeuratAnalysis/20221115_monkey_homologyexp.rds")
+
+zebrafish_seurat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221110_ZebrafishDataAnalysis/20221108_logtransform_harmony_Zebrafish_pineal_gland.rds")
+rat_seurat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20221108_RatDataAnalysis/20221108_logtransform_harmony_rat_day_pineal_gland.rds")
+monkey_seurat <- readRDS("/home/zhengjh/projects/PinealGland/analysis/20220602_MonkeyDataAnalysis/Seurat_Analysis/20220606_monkey_pineal_gland.rds")
+
+genes_list <- list(zebrafish = rownames(zebrafish$zebrafish_original_exp),
+									 rat = rownames(rat$rat_exp), 
+									 monkey = rownames(monkey$monkey_exp))
+
+## 先看下转化后的基因的交集情况
+nsets <- 3
+venn.plot = venn.diagram(
+x = genes_list,
+category.names = names(genes_list),
+ # filename = 'venn.png',
+filename = NULL,
+output=TRUE,
+fill = brewer.pal(8, "Set2")[1:nsets],
+col = brewer.pal(8, "Set2")[1:nsets],
+fontface = "bold",
+cat.col = brewer.pal(8, "Set2")[1:nsets],
+cat.fontface = "bold")
+
+pdf("20230608_threespecies_shared_genes.pdf")
+grid.draw(venn.plot)
+dev.off()
+
+### 看下这些基因可以解释的方差
+library(tidyverse)
+
+# Create a dataframe with the same structure as df_var
+df_var <- data.frame(
+  matrix(nrow = length(levels(zebrafish_seurat@active.ident)) + 1, ncol = 1, dimnames = list(c("all cells", levels(zebrafish_seurat@active.ident)), c("zebrafish"))),
+  stringsAsFactors = FALSE
+)
+
+# zebrafish
+df <- apply(zebrafish_seurat@assays$RNA@data, 1, var)
+var_tot <- sum(df)
+var_sub <- sum(df[match(genes_list$zebrafish, names(df))])
+cat(paste0("explained variance zebrafish - all cells: ", var_sub/var_tot, "\n"))
+df_var["all cells", "zebrafish"] <- var_sub/var_tot
+
+for (group in levels(zebrafish_seurat@active.ident)) {
+	temp <- subset(zebrafish_seurat, idents = group)
+  df <- apply(temp@assays$RNA@data, 1, var)
+  var_tot <- sum(df)
+  var_sub <- sum(df[match(genes_list$zebrafish, names(df))])
+  cat(paste0("explained variance zebrafish - ", group, " cells: ", var_sub/var_tot, "\n"))
+  df_var[group, "zebrafish"] <- var_sub/var_tot
+  rm(temp)
+}
+
+library(tidyverse)
+
+calc_var_ratio <- function(seurat_obj, species, genes_list) {
+  
+  # Create a dataframe with the same structure as df_var
+  df_var <- data.frame(
+    matrix(nrow = length(levels(seurat_obj@active.ident)) + 1, ncol = 1, dimnames = list(c("all cells", levels(seurat_obj@active.ident)), c(species))),
+    stringsAsFactors = FALSE
+  )
+  
+  # Calculate variance ratio for the specified species
+  df <- apply(seurat_obj@assays$RNA@data, 1, var)
+  var_tot <- sum(df)
+  var_sub <- sum(df[match(genes_list[[species]], names(df))])
+  cat(paste0("explained variance ", species, " - all cells: ", var_sub/var_tot, "\n"))
+  df_var["all cells", species] <- var_sub/var_tot
+  
+  for (group in levels(seurat_obj@active.ident)) {
+    temp <- subset(seurat_obj, idents = group)
+    df <- apply(temp@assays$RNA@data, 1, var)
+    var_tot <- sum(df)
+    var_sub <- sum(df[match(genes_list[[species]], names(df))])
+    cat(paste0("explained variance ", species, " - ", group, " cells: ", var_sub/var_tot, "\n"))
+    df_var[group, species] <- var_sub/var_tot
+    rm(temp)
+  }
+  
+  return(df_var)
+}
+zebrafish_df <- calc_var_ratio(seurat_obj = zebrafish_seurat, species = "zebrafish", genes_list = genes_list)
+rat_df <-  calc_var_ratio(seurat_obj = rat_seurat, species = "rat", genes_list = genes_list)
+monkey_df <- calc_var_ratio(seurat_obj = monkey_seurat, species = "monkey", genes_list = genes_list)
+
+res_df <- list(zebrafish_df = zebrafish_df, rat_df = rat_df, monkey_df = monkey_df)
+write.xlsx(res_df, "20230608_three_species_explained_variance.xlsx", rowNames = T, colNames = T)
+
+
+
+### 看下猴子和大鼠, 猴子和斑马鱼交叉的基因可解释的方差
+## just select gene expressed >= 30 cells
+monkey_gene <- read.xlsx("/home/zhengjh/projects/PinealGland/analysis/20221116_IntegratedAnalysis/OrthologGene/PinealGlandSpeciesGeneName_Map_to_Ratgene.xlsx", sheet = 3)
+
+
+genes_list <- list(monkey_rat=intersect(rownames(monkey$HomologyExp), rownames(rat$rat_exp)),
+									 monkey_zebrafish=intersect(rownames(monkey$HomologyExp), rownames(zebrafish$HomologyExp)))
+genes_list$three <- intersect(genes_list$monkey_rat, genes_list$monkey_zebrafish)
+
+index <- match(genes_list$monkey_rat, monkey_gene$HomologyGene)
+genes_list$monkey_rat_homology <- monkey_gene$MonkeyGenename[index]
+
+index <- match(genes_list$three, monkey_gene$HomologyGene)
+genes_list$three_homology <- monkey_gene$MonkeyGenename[index]
+
+index <- match(genes_list$monkey_zebrafish, monkey_gene$HomologyGene)
+genes_list$monkey_zebrafish_homology <- monkey_gene$MonkeyGenename[index]
+
+monkey_df_intersect <- calc_var_ratio(seurat_obj = monkey_seurat, species = "three_homology", genes_list = genes_list)
+monkey_df_intersect_rat <- calc_var_ratio(seurat_obj = monkey_seurat, species = "monkey_rat_homology", genes_list = genes_list)
+monkey_df_intersect_zebrafish <- calc_var_ratio(seurat_obj = monkey_seurat, species = "monkey_zebrafish_homology", genes_list = genes_list)
+
+```
