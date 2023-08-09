@@ -9,7 +9,7 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-# 20230717 CellChat Analysis 仅仅关注感光细胞以及胶质细胞 microglia 
+# 20230717 CellChat Analysis focsued on photoreceptors(pinealocyte) and glia cells(RPE-like cells, Müller-like glia cells and astrocytes)
 ## Zebrafish
 
 ### combine cone/rod as pinealocytes, rpe-like, muller like-glia 
